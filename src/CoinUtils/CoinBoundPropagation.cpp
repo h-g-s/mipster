@@ -3,7 +3,7 @@
  * This file is part of the COIN-OR CoinUtils package
  *
  * @file   CoinBoundPropagation.cpp
- * @brief  Bound propagation for binary variables in a MILP.
+ * @brief  Bound propagation for binary and general integer variables in a MILP.
  *
  * Copyright (C) 2025
  * All rights reserved.
@@ -177,13 +177,128 @@ CoinBoundPropagation::CoinBoundPropagation(
     bool rowSkipped = (numIter == 0);
 
     for (int it = 0; it < numIter; ++it) {
-      // Mathematical pre-check: skip this iteration if no fixing is possible.
+      // === General integer bound tightening ===
+      // Compute min-activity in L-form (sum c_i x_i <= effRHS after multiplier),
+      // detect row infeasibility, and tighten upper/lower bounds of general
+      // integer variables.  Runs before the binary pre-check so that updated
+      // bounds feed into rowNeedsProcessing and processRow, enabling better
+      // binary fixing in the same forward pass.
+      //
+      // For an L-form row (multiplier applied):
+      //   minActivity = sum_{c>0} c*lb + sum_{c<0} c*ub
+      //   rowSlack    = effRHS - minActivity
+      //   General int j, c>0:  new_ub = lb + floor(rowSlack / c)
+      //   General int j, c<0:  new_lb = ub - floor(rowSlack / |c|)
+      // Overflow guard: skip if rowSlack/|c| >= (ub - lb) (no improvement).
+      // A small tolerance is added before floor() to absorb floating-point
+      // rounding when the true ratio is exactly an integer.
+      bool genIntDidWork = false;
+      {
+        const double effRHS = multipliers[it] * rhsAdjustments[it];
+        double minAct = 0.0;
+        bool unbounded = false;
+        for (size_t j = 0; j < rowLength && !unbounded; ++j) {
+          const int col = rowIdxs[j];
+          const double c = rowCoefs[j] * multipliers[it];
+          if (mColLB[col] >= mColUB[col] - primalTolerance) {
+            minAct += c * mColLB[col]; // fixed variable: use its value
+          } else if (c > 0.0) {
+            if (mColLB[col] <= -infinity) { unbounded = true; break; }
+            minAct += c * mColLB[col];
+          } else if (c < 0.0) {
+            if (mColUB[col] >= infinity) { unbounded = true; break; }
+            minAct += c * mColUB[col];
+          }
+          // c == 0: contributes nothing to minActivity
+        }
+        if (!unbounded) {
+          const double rowSlack = effRHS - minAct;
+          if (rowSlack < -primalTolerance) {
+            // Row is infeasible: minimum possible activity already exceeds RHS.
+#ifdef COIN_BT_STATS
+            {
+              const auto statsT1 = std::chrono::high_resolution_clock::now();
+              rowStats_.push_back({idxRow,
+                std::chrono::duration< double >(statsT1 - statsT0).count(),
+                newBounds_.size() - fixingsBefore, false});
+            }
+#endif
+            infeasibleRow_ = static_cast< int >(idxRow);
+            infeasible_ = true;
+            return;
+          }
+          // Tighten general integer bounds using the available row slack.
+          for (size_t j = 0; j < rowLength; ++j) {
+            const int col = rowIdxs[j];
+            if (colType[col] != CoinColumnType::GeneralInteger) continue;
+            if (mColLB[col] >= mColUB[col] - primalTolerance) continue; // already fixed
+            const double c = rowCoefs[j] * multipliers[it];
+            const double lb = mColLB[col], ub = mColUB[col];
+            const double currentRange = ub - lb;
+            if (c > 0.0) {
+              // UB tightening: new_ub = lb + floor(rowSlack / c)
+              // Overflow guard: if rowSlack/c >= range, no improvement possible.
+              if (rowSlack / c >= currentRange - primalTolerance) continue;
+              const double newUB = lb + std::floor(rowSlack / c + primalTolerance);
+              if (newUB < ub - primalTolerance) {
+                if (newUB < lb - primalTolerance) {
+#ifdef COIN_BT_STATS
+                  {
+                    const auto statsT1 = std::chrono::high_resolution_clock::now();
+                    rowStats_.push_back({idxRow,
+                      std::chrono::duration< double >(statsT1 - statsT0).count(),
+                      newBounds_.size() - fixingsBefore, false});
+                  }
+#endif
+                  infeasibleRow_ = static_cast< int >(idxRow);
+                  infeasible_ = true;
+                  return;
+                }
+                mColUB[col] = newUB;
+                newBounds_.emplace_back(static_cast< size_t >(col),
+                  std::make_pair(mColLB[col], mColUB[col]));
+                genIntDidWork = true;
+              }
+            } else if (c < 0.0) {
+              // LB tightening: new_lb = ub - floor(rowSlack / |c|)
+              const double absC = -c;
+              // Overflow guard: if rowSlack/|c| >= range, no improvement possible.
+              if (rowSlack / absC >= currentRange - primalTolerance) continue;
+              const double newLB = ub - std::floor(rowSlack / absC + primalTolerance);
+              if (newLB > lb + primalTolerance) {
+                if (newLB > ub + primalTolerance) {
+#ifdef COIN_BT_STATS
+                  {
+                    const auto statsT1 = std::chrono::high_resolution_clock::now();
+                    rowStats_.push_back({idxRow,
+                      std::chrono::duration< double >(statsT1 - statsT0).count(),
+                      newBounds_.size() - fixingsBefore, false});
+                  }
+#endif
+                  infeasibleRow_ = static_cast< int >(idxRow);
+                  infeasible_ = true;
+                  return;
+                }
+                mColLB[col] = newLB;
+                newBounds_.emplace_back(static_cast< size_t >(col),
+                  std::make_pair(mColLB[col], mColUB[col]));
+                genIntDidWork = true;
+              }
+            }
+          }
+        }
+      }
+      if (genIntDidWork)
+        rowSkipped = false;
+
+      // Mathematical pre-check: skip binary fixing if no fixing is possible.
       // This is always sound — it never suppresses a real fixing or infeasibility.
       if (!rowNeedsProcessing(rowIdxs, rowCoefs, rowLength,
                                multipliers[it], rhsAdjustments[it],
                                mColLB, mColUB, colType,
                                primalTolerance, infinity)) {
-        rowSkipped = true;
+        if (!genIntDidWork)
+          rowSkipped = true;
         continue;
       }
 
@@ -193,7 +308,8 @@ CoinBoundPropagation::CoinBoundPropagation(
 
       // Skip rows that are unbounded or have no binary variables.
       if (knapsackRow.isUnbounded()) {
-        rowSkipped = true;
+        if (!genIntDidWork)
+          rowSkipped = true;
         continue;
       }
 

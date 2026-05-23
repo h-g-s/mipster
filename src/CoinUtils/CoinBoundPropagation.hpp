@@ -3,7 +3,7 @@
  * This file is part of the COIN-OR CoinUtils package
  *
  * @file   CoinBoundPropagation.hpp
- * @brief  Bound propagation for binary variables in a MILP.
+ * @brief  Bound propagation for binary and general integer variables in a MILP.
  *
  * Copyright (C) 2025
  * All rights reserved.
@@ -39,11 +39,25 @@ struct CoinBTRowStats {
 #endif // COIN_BT_STATS
 
 /**
- * @brief Fast knapsack-based bound tightening for binary variables.
+ * @brief Fast bound tightening for binary and general integer variables.
  *
- * Scans every constraint row of a MILP once and identifies binary variables
- * that can be fixed (lower bound raised to 1 or upper bound lowered to 0)
- * based on the knapsack structure of each row:
+ * Scans every constraint row of a MILP once and tightens variable bounds:
+ *
+ * **General integer bound tightening** — for each row in L-form
+ * (sum c_i x_i <= b, after applying row sense multiplier):
+ *   - minActivity = sum_{c_i>0} c_i*lb_i + sum_{c_i<0} c_i*ub_i
+ *   - rowSlack = b - minActivity
+ *   - If rowSlack < -tolerance: row is infeasible.
+ *   - For general integer j with c_j > 0:  new_ub = lb + floor(rowSlack / c_j)
+ *   - For general integer j with c_j < 0:  new_lb = ub - floor(rowSlack / |c_j|)
+ *   All sign combinations (positive/negative coefficient, positive/negative
+ *   bounds) are handled correctly.  An overflow guard (division-based, avoids
+ *   c*range multiplication overflow) skips entries where no tightening is
+ *   possible.
+ *
+ * **Binary fixing** — identifies binary variables that can be fixed
+ * (lower bound raised to 1 or upper bound lowered to 0) based on the
+ * knapsack structure of each row:
  *
  *   - Each row is converted to the form  sum a_i x_i <= b  (all a_i >= 0)
  *     by discounting fixed and continuous/general-integer variables from the
@@ -53,23 +67,26 @@ struct CoinBTRowStats {
  *     form, x_j appears with a positive coefficient; if that exceeds the RHS
  *     the *original* variable must be 1.
  *
+ * General integer tightening runs first; updated bounds immediately feed into
+ * the binary fixing pass for the same row, enabling propagation chains
+ * (e.g., a tightened general integer tightens the effective RHS, which then
+ * forces a binary indicator variable).
+ *
  * Fixings discovered early are propagated within the single forward pass:
  * the internal mutable bounds are updated immediately so that subsequent
  * rows benefit from tighter coefficient sums.
  *
- * **Infeasibility detection** — two conditions are checked:
- *   1. Direct row infeasibility: after processing, the effective RHS is finite
- *      but negative (below −tolerance), meaning the constraint cannot be
- *      satisfied by any binary assignment.
- *   2. Contradictory fixings: the same variable is implied to be both 0 and 1
- *      by two different rows.
+ * **Infeasibility detection** — three conditions are checked:
+ *   1. Row infeasibility: minActivity > effRHS + tolerance.
+ *   2. Direct binary row infeasibility: effective RHS is finite but negative.
+ *   3. Contradictory binary fixings: same variable implied to be both 0 and 1.
  *
- * On either condition the scan is aborted immediately.  Call isInfeasible()
+ * On any condition the scan is aborted immediately.  Call isInfeasible()
  * to check whether this occurred.
  *
  * Note: only the "coefficient exceeds RHS" fixing mechanism is implemented
- * here.  More elaborate probing (fixing a variable and propagating) is out
- * of scope; this class is intentionally lightweight.
+ * for binaries.  More elaborate probing (fixing a variable and propagating)
+ * is out of scope; this class is intentionally lightweight.
  */
 class COINUTILSLIB_EXPORT CoinBoundPropagation {
 public:

@@ -24,6 +24,8 @@
 #include "CoinBuild.hpp"
 #include "CoinHelperFunctions.hpp"
 #include "CoinWarmStartBasis.hpp"
+#include "CoinBoundPropagation.hpp"
+#include "CoinColumnType.hpp"
 #ifdef CBC_HAS_CLP
 #include "OsiClpSolverInterface.hpp"
 #else
@@ -5598,6 +5600,118 @@ tighten(double *colLower, double * colUpper,
 
 /* Creates solution in original model
    deleteStuff 0 - don't, 1 do (but not if infeasible), 2 always */
+
+// ---- Mini-B&B helper for postProcess three-phase integer recovery ----
+// Context for the mini branch-and-bound used in Phase 3 of postProcess.
+struct MiniBBCtx {
+  int numCols;
+  int numRows;
+  const char *colType;
+  // Column matrix (for updating rowActivity when a variable is fixed)
+  const CoinBigIndex *colStart;
+  const int *colLen;
+  const int *colRow;
+  const double *colElem;
+  // Row matrix + sense/rhs/range for CoinBoundPropagation
+  const CoinPackedMatrix *matByRow;
+  const char *rowSense;
+  const double *rhs;
+  const double *rowRange;
+  // Original fractional solution (for branching direction preference)
+  const double *origSol;
+  double primalTol;
+};
+
+// Recursive mini-B&B: fix free integer variables one at a time,
+// running CoinBoundPropagation after each fix to propagate.
+// Returns true if a complete integer assignment was found.
+static bool miniBBRecurse(
+  const MiniBBCtx &ctx,
+  const std::vector< int > &freeInts,
+  int pos,
+  double *sol,
+  double *rowAct,
+  std::vector< double > &wLB,
+  std::vector< double > &wUB,
+  int depth)
+{
+  // Skip variables already fixed by propagation.
+  while (pos < static_cast< int >(freeInts.size()) && wLB[freeInts[pos]] >= wUB[freeInts[pos]] - 1.0e-10)
+    pos++;
+  if (pos >= static_cast< int >(freeInts.size()))
+    return true; // all fixed
+  if (depth <= 0)
+    return false; // depth limit reached
+
+  const int col = freeInts[pos];
+  const double lb = wLB[col], ub = wUB[col];
+  const double origV = ctx.origSol[col];
+
+  // Try nearest integer first, then the other direction.
+  double primary = std::floor(origV + 0.5);
+  primary = CoinMax(lb, CoinMin(ub, primary));
+
+  for (int d = 0; d < 2; d++) {
+    double val;
+    if (d == 0) {
+      val = primary;
+    } else {
+      val = (primary > origV - 0.5) ? (primary - 1.0) : (primary + 1.0);
+      val = CoinMax(lb, CoinMin(ub, val));
+      if (std::fabs(val - primary) < 0.5)
+        continue; // no second direction available
+    }
+
+    // Save working state for backtracking.
+    const std::vector< double > savedLB = wLB, savedUB = wUB;
+    const std::vector< double > savedSol(sol, sol + ctx.numCols);
+    const std::vector< double > savedRowAct(rowAct, rowAct + ctx.numRows);
+
+    // Fix this variable and update rowActivity.
+    const double movement = val - sol[col];
+    sol[col] = val;
+    wLB[col] = wUB[col] = val;
+    for (CoinBigIndex j = ctx.colStart[col]; j < ctx.colStart[col] + ctx.colLen[col]; j++)
+      rowAct[ctx.colRow[j]] += movement * ctx.colElem[j];
+
+    // Propagate bounds with the new fixing.
+    CoinBoundPropagation bp(ctx.numCols, ctx.colType,
+      wLB.data(), wUB.data(),
+      ctx.matByRow, ctx.rowSense, ctx.rhs, ctx.rowRange, ctx.primalTol);
+
+    if (!bp.isInfeasible()) {
+      // Apply propagation results.
+      for (const auto &fix : bp.updatedBounds()) {
+        const int c2 = static_cast< int >(fix.first);
+        const bool wasFree = (wLB[c2] < wUB[c2] - 1.0e-10);
+        wLB[c2] = fix.second.first;
+        wUB[c2] = fix.second.second;
+        if (wasFree && wLB[c2] >= wUB[c2] - 1.0e-10) {
+          // Variable just got fixed by propagation; update sol and rowActivity.
+          const char ct = ctx.colType[c2];
+          if (ct == CoinColumnType::Binary || ct == CoinColumnType::GeneralInteger) {
+            double fixedVal = std::floor(wLB[c2] + 0.5);
+            fixedVal = CoinMax(wLB[c2], CoinMin(wUB[c2], fixedVal));
+            const double mov2 = fixedVal - sol[c2];
+            sol[c2] = fixedVal;
+            for (CoinBigIndex j = ctx.colStart[c2]; j < ctx.colStart[c2] + ctx.colLen[c2]; j++)
+              rowAct[ctx.colRow[j]] += mov2 * ctx.colElem[j];
+          }
+        }
+      }
+      if (miniBBRecurse(ctx, freeInts, pos + 1, sol, rowAct, wLB, wUB, depth - 1))
+        return true;
+    }
+
+    // Backtrack.
+    wLB = savedLB;
+    wUB = savedUB;
+    std::copy(savedSol.begin(), savedSol.end(), sol);
+    std::copy(savedRowAct.begin(), savedRowAct.end(), rowAct);
+  }
+  return false;
+}
+
 void CglPreProcess::postProcess(OsiSolverInterface &modelIn, int deleteStuff)
 {
   // Do presolves
@@ -6182,6 +6296,10 @@ void CglPreProcess::postProcess(OsiSolverInterface &modelIn, int deleteStuff)
       double *rowActivity = new double[numberRows];
       memset(rowActivity, 0, numberRows * sizeof(double));
       double *solution = CoinCopyOfArray(solutionM, numberColumns);
+      /* Initialize rowActivity and solution[] for the rounding checks.
+         "Good" integers are at their rounded values; fractional integers
+         (bad values) keep their LP values so rowActivity is LP-feasible.
+         Movements for rounding are computed relative to these LP values. */
       for (iColumn = 0; iColumn < numberColumns; iColumn++) {
         double value = solutionM[iColumn];
         if (modelM->isInteger(iColumn)) {
@@ -6189,6 +6307,7 @@ void CglPreProcess::postProcess(OsiSolverInterface &modelIn, int deleteStuff)
           // if test fails then empty integer
           if (fabs(value - value2) < 1.0e-3)
             value = value2;
+          // fractional integers keep their LP value for rowActivity init
         }
         solution[iColumn] = value;
         for (CoinBigIndex j = columnStart[iColumn];
@@ -6199,8 +6318,6 @@ void CglPreProcess::postProcess(OsiSolverInterface &modelIn, int deleteStuff)
       }
       const double *rowLower = model->getRowLower();
       const double *rowUpper = model->getRowUpper();
-      //const double * columnLower = model->getColLower();
-      //const double * columnUpper = model->getColUpper();
       const double *objective = model->getObjCoefficients();
       double direction = model->getObjSense();
 #ifndef NDEBUG
@@ -6210,18 +6327,18 @@ void CglPreProcess::postProcess(OsiSolverInterface &modelIn, int deleteStuff)
       model->getDblParam(OsiPrimalTolerance, tolerance);
       tolerance *= 10.0;
       for (iColumn = 0; iColumn < numberColumns; iColumn++) {
-        double value = solution[iColumn];
         if (model->isInteger(iColumn)) {
-          double value2 = floor(value);
-          // See if empty integer
-          if (value != value2) {
+          double origValue = solutionM[iColumn];
+          double value2 = floor(origValue);
+          // Detect empty integer: fractional in original solution
+          if (fabs(origValue - value2) >= 1.0e-3 && fabs(origValue - (value2 + 1.0)) >= 1.0e-3) {
 #ifndef NDEBUG
             numberCheck++;
 #endif
             int allowed = 0;
-            // can we go up
-            double movement = value2 + 1.0 - value;
             CoinBigIndex j;
+            // Can we go up from LP value to value2+1?
+            double movementUp = value2 + 1.0 - origValue;
             bool good = true;
             for (j = columnStart[iColumn];
                  j < columnStart[iColumn] + columnLength[iColumn]; j++) {
@@ -6231,19 +6348,19 @@ void CglPreProcess::postProcess(OsiSolverInterface &modelIn, int deleteStuff)
                 printf("odd row with both bounds %d %g %g - element %g\n",
                   iRow, rowLower[iRow], rowUpper[iRow], element[j]);
 #endif
-              double newActivity = rowActivity[iRow] + movement * element[j];
+              double newActivity = rowActivity[iRow] + movementUp * element[j];
               if (newActivity > rowUpper[iRow] + tolerance || newActivity < rowLower[iRow] - tolerance)
                 good = false;
             }
             if (good)
               allowed = 1;
-            // can we go down
-            movement = value2 - value;
+            // Can we go down from LP value to value2?
+            double movementDown = value2 - origValue;
             good = true;
             for (j = columnStart[iColumn];
                  j < columnStart[iColumn] + columnLength[iColumn]; j++) {
               int iRow = row[j];
-              double newActivity = rowActivity[iRow] + movement * element[j];
+              double newActivity = rowActivity[iRow] + movementDown * element[j];
               if (newActivity > rowUpper[iRow] + tolerance || newActivity < rowLower[iRow] - tolerance)
                 good = false;
             }
@@ -6256,12 +6373,11 @@ void CglPreProcess::postProcess(OsiSolverInterface &modelIn, int deleteStuff)
                 else
                   allowed = 1;
               }
-              if (allowed == 1)
-                value2++;
-              movement = value2 - value;
-              solution[iColumn] = value2;
-              model->setColLower(iColumn, value2);
-              model->setColUpper(iColumn, value2);
+              double roundedValue = value2 + (allowed == 1 ? 1.0 : 0.0);
+              double movement = roundedValue - solution[iColumn];
+              solution[iColumn] = roundedValue;
+              model->setColLower(iColumn, roundedValue);
+              model->setColUpper(iColumn, roundedValue);
               for (j = columnStart[iColumn];
                    j < columnStart[iColumn] + columnLength[iColumn]; j++) {
                 int iRow = row[j];
@@ -6276,6 +6392,146 @@ void CglPreProcess::postProcess(OsiSolverInterface &modelIn, int deleteStuff)
         }
       }
       assert(numberCheck == numberBadValues);
+      /* Round any fractional bounds on integer variables to integer values.
+         CglProbing LP-based bound tightening may set non-integer bounds
+         (e.g. lb=0.226923 on a binary, meaning the LP says the variable is
+         always ≥ 0.226923 so as an integer it must be ≥ 1).  Without this
+         rounding the LP solve below would return the fractional lower bound
+         as the optimal for "Unable to move" variables, yielding a
+         non-integer bestSolution. */
+      for (iColumn = 0; iColumn < numberColumns; iColumn++) {
+        if (model->isInteger(iColumn)) {
+          double lb = model->getColLower()[iColumn];
+          double ub = model->getColUpper()[iColumn];
+          double roundedLb = std::ceil(lb - 1.0e-8);
+          double roundedUb = std::floor(ub + 1.0e-8);
+          if (roundedLb > lb + 1.0e-10)
+            model->setColLower(iColumn, roundedLb);
+          if (roundedUb < ub - 1.0e-10)
+            model->setColUpper(iColumn, roundedUb);
+        }
+      }
+      /* Three-phase recovery for remaining fractional integer variables.
+         After the individual rounding pass above, some integers may still be
+         free (their LP value was too far from any integer to round safely, or
+         equality constraints prevent individual rounding).  We use three phases:
+         Phase 1: Round non-binary general integers (ub > 1) to nearest integer
+                  and fix their bounds.  Binaries are intentionally left for
+                  Phase 2 because CoinBoundPropagation can derive them exactly.
+         Phase 2: CoinBoundPropagation — with generals fixed, binary indicators
+                  linked by BigM constraints are forced via the "coefficient
+                  exceeds rowSlack" mechanism.  General integer bounds also
+                  benefit from propagation across multiple rows.
+         Phase 3: Mini-B&B (depth ≤ 20) for any integers still free after
+                  propagation.  Each branch runs CoinBoundPropagation again;
+                  backtracking restores the saved working state.
+         Fallback: if mini-B&B fails, remaining free integers are rounded to
+                  nearest integer (original nearest-integer greedy). */
+      {
+        // Working bound arrays reflecting all fixings made below.
+        std::vector< double > wLB(model->getColLower(), model->getColLower() + numberColumns);
+        std::vector< double > wUB(model->getColUpper(), model->getColUpper() + numberColumns);
+        // Phase 1: round non-binary general integers to nearest integer.
+        for (iColumn = 0; iColumn < numberColumns; iColumn++) {
+          if (!model->isInteger(iColumn)) continue;
+          if (wLB[iColumn] >= wUB[iColumn] - 1.0e-10) continue; // already fixed
+          // Binary variables (bounds in [0,1]): leave for Phase 2.
+          if (wUB[iColumn] <= 1.0 + 1.0e-10 && wLB[iColumn] >= -1.0e-10) continue;
+          double vr = std::floor(solutionM[iColumn] + 0.5);
+          vr = CoinMax(vr, wLB[iColumn]);
+          vr = CoinMin(vr, wUB[iColumn]);
+          const double movement = vr - solution[iColumn];
+          solution[iColumn] = vr;
+          wLB[iColumn] = wUB[iColumn] = vr;
+          model->setColLower(iColumn, vr);
+          model->setColUpper(iColumn, vr);
+          for (CoinBigIndex j = columnStart[iColumn];
+               j < columnStart[iColumn] + columnLength[iColumn]; j++)
+            rowActivity[row[j]] += movement * element[j];
+        }
+
+        {
+          const char *colTypeArr = model->getColType(false);
+          const CoinPackedMatrix *rowCopyBP = model->getMatrixByRow();
+          const char *rowSenseBP = model->getRowSense();
+          const double *rhsBP = model->getRightHandSide();
+          const double *rangeBP = model->getRowRange();
+          CoinBoundPropagation bp(numberColumns, colTypeArr,
+            wLB.data(), wUB.data(),
+            rowCopyBP, rowSenseBP, rhsBP, rangeBP, tolerance);
+          if (!bp.isInfeasible()) {
+            for (const auto &fix : bp.updatedBounds()) {
+              const int c2 = static_cast< int >(fix.first);
+              const bool wasFree = (wLB[c2] < wUB[c2] - 1.0e-10);
+              wLB[c2] = fix.second.first;
+              wUB[c2] = fix.second.second;
+              model->setColLower(c2, wLB[c2]);
+              model->setColUpper(c2, wUB[c2]);
+              if (wasFree && model->isInteger(c2) && wLB[c2] >= wUB[c2] - 1.0e-10) {
+                double fixedVal = std::floor(wLB[c2] + 0.5);
+                fixedVal = CoinMax(wLB[c2], CoinMin(wUB[c2], fixedVal));
+                const double mov2 = fixedVal - solution[c2];
+                solution[c2] = fixedVal;
+                for (CoinBigIndex j = columnStart[c2];
+                     j < columnStart[c2] + columnLength[c2]; j++)
+                  rowActivity[row[j]] += mov2 * element[j];
+              }
+            }
+          }
+        }
+
+        // Phase 3: mini-B&B for integers still free after propagation.
+        std::vector< int > freeInts;
+        for (int c = 0; c < numberColumns; c++) {
+          if (model->isInteger(c) && wLB[c] < wUB[c] - 1.0e-10)
+            freeInts.push_back(c);
+        }
+        if (!freeInts.empty()) {
+          const char *colTypeArr = model->getColType(false);
+          const CoinPackedMatrix *rowCopyBP = model->getMatrixByRow();
+          MiniBBCtx ctx;
+          ctx.numCols = numberColumns;
+          ctx.numRows = numberRows;
+          ctx.colType = colTypeArr;
+          ctx.colStart = columnStart;
+          ctx.colLen = columnLength;
+          ctx.colRow = row;
+          ctx.colElem = element;
+          ctx.matByRow = rowCopyBP;
+          ctx.rowSense = model->getRowSense();
+          ctx.rhs = model->getRightHandSide();
+          ctx.rowRange = model->getRowRange();
+          ctx.origSol = solutionM;
+          ctx.primalTol = tolerance;
+
+          bool bbOk = miniBBRecurse(ctx, freeInts, 0,
+            solution, rowActivity, wLB, wUB, 20);
+
+          if (bbOk) {
+            // Apply mini-B&B results to the model.
+            for (int c : freeInts) {
+              model->setColLower(c, wLB[c]);
+              model->setColUpper(c, wUB[c]);
+            }
+          } else {
+            // Fallback: greedy nearest-integer for any still-free variables.
+            for (int c : freeInts) {
+              if (wLB[c] >= wUB[c] - 1.0e-10) continue;
+              double vr = std::floor(solutionM[c] + 0.5);
+              vr = CoinMax(vr, wLB[c]);
+              vr = CoinMin(vr, wUB[c]);
+              const double movement = vr - solution[c];
+              solution[c] = vr;
+              wLB[c] = wUB[c] = vr;
+              model->setColLower(c, vr);
+              model->setColUpper(c, vr);
+              for (CoinBigIndex j = columnStart[c];
+                   j < columnStart[c] + columnLength[c]; j++)
+                rowActivity[row[j]] += movement * element[j];
+            }
+          }
+        }
+      }
       model->setColSolution(solution);
       delete[] rowActivity;
       delete[] solution;
