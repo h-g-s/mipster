@@ -283,7 +283,7 @@ int main(int argc, const char *argv[])
         } else if (matchNdx == -4) {
           std::cout
             << "Please report this error by filing a ticket at "
-            << "https://projects.coin-or.org/Cbc/wiki."
+            << "https://github.com/h-g-s/mipster/issues."
             << std::endl;
         }
       }
@@ -375,7 +375,7 @@ int main(int argc, const char *argv[])
             << "Parse status is " << valid
             << "; this indicates internal confusion." << std::endl
             << "Please report this error by filing a ticket at "
-            << "https://projects.coin-or.org/Cbc/wiki."
+            << "https://github.com/h-g-s/mipster/issues."
             << std::endl;
         }
         }
