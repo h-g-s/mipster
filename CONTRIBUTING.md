@@ -403,11 +403,11 @@ cd test && make -j$(nproc) test
 
 ## 8. Submitting Changes
 
-1. **Fork** the repository and create a branch from `main`.
+1. **Fork** the repository at <https://github.com/h-g-s/mipster/> and create a branch from `master`.
 2. **Make your changes** — keep commits focused and atomic.
 3. **Format code**: `./format-all-sources.sh`
 4. **Run tests**: `cd test && make -j$(nproc) test`
-5. **Open a Pull Request** against `main` with a clear description.
+5. **Open a Pull Request** against `master` at <https://github.com/h-g-s/mipster/pulls>.
 
 ### Commit messages
 
@@ -419,5 +419,5 @@ cd test && make -j$(nproc) test
 
 ## Getting Help
 
-- Open an issue on GitHub for bugs, questions, or feature requests.
-- For development discussions, use GitHub Discussions.
+- Open an issue at <https://github.com/h-g-s/mipster/issues> for bugs, questions, or feature requests.
+- For development discussions, use <https://github.com/h-g-s/mipster/discussions>.
