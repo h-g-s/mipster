@@ -917,7 +917,7 @@ CglKnapsackCover::deriveAKnapsack(
        const double * element)
 {
 
-  // Fix to https://projects.coin-or.org/Cbc/ticket/30
+  // Fix to https://github.com/h-g-s/mipster/issues (originally reported at https://projects.coin-or.org/Cbc/ticket/30)
   {
     // On investigation looks as if it can happen without being a bug
     if (numberElements==0) return 0;

@@ -8,7 +8,7 @@ Description:
     and is designed to be used with CLP. It is available as a library and
     as a standalone solver."
   Manager: Ted Ralphs, ted at lehigh dot edu 
-  Homepage: https://github.com/coin-or/Cbc
+  Homepage: https://github.com/h-g-s/mipster/
   License: Eclipse Public License 2.0
   LicenseURL: http://www.opensource.org/licenses/EPL-2.0
   Zenodo: 173509563
