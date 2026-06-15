@@ -885,7 +885,7 @@ const CoinPresolveAction *OsiPresolve::presolve(CoinPresolveMatrix *prob)
   TRACK_PRESOLVE("testRedundant", paction_ = testRedundant(prob, paction_););
 
   // GF(2) parity reduction — run early, before the main loop
-  if (prob->anyInteger() && !prob->status_) {
+  if (prob->anyInteger() && !prob->status_ && !(presolveActions_ & 0x8000)) {
     TRACK_PRESOLVE("parity_action", paction_ = parity_action::presolve(prob, paction_););
     if (prob->status_)
       return (paction_);
@@ -1300,7 +1300,7 @@ const CoinPresolveAction *OsiPresolve::presolve(CoinPresolveMatrix *prob)
           break;
       }
 
-      if (prob->anyInteger()) {
+      if (prob->anyInteger() && !(presolveActions_ & 0x8000)) {
         possibleBreak;
         TRACK_PRESOLVE("parity_action", paction_ = parity_action::presolve(prob, paction_););
 #if PRESOLVE_DEBUG > 0

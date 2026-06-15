@@ -730,6 +730,7 @@ void CbcParameters::addCbcParams() {
   parameters_[CbcParam::USESOLUTION]->setTopic("Heuristics");
   parameters_[CbcParam::HEURISTICSTATS]->setTopic("Output");
   parameters_[CbcParam::INSPECTPREPROCESSING]->setTopic("MIP Preprocessing");
+  parameters_[CbcParam::PARITYPRESOLVE]->setTopic("MIP Preprocessing");
   parameters_[CbcParam::MESSAGES]->setTopic("Output");
   parameters_[CbcParam::ERRORSALLOWED]->setTopic("I/O");
 
@@ -895,6 +896,7 @@ void CbcParameters::setDefaults(int strategy) {
      parameters_[CbcParam::DOHEURISTIC]->setDefault("off");
      parameters_[CbcParam::HEURISTICSTATS]->setDefault("off");
      parameters_[CbcParam::INSPECTPREPROCESSING]->setDefault("off");
+     parameters_[CbcParam::PARITYPRESOLVE]->setDefault("on");
      parameters_[CbcParam::ERRORSALLOWED]->setDefault("off");
      parameters_[CbcParam::MESSAGES]->setDefault("off");
      parameters_[CbcParam::PREPROCNAMES]->setDefault("on");
@@ -2782,6 +2784,16 @@ void CbcParameters::addCbcSolverBoolParams() {
       "iteration counts for initialSolve, resolve-after-cuts, and resolve-after-row-drop "
       "with LP objective value and basis infeasibility counts. Useful for diagnosing "
       "slow preprocessing on instances where LP re-optimisation dominates.");
+
+  parameters_[CbcParam::PARITYPRESOLVE]->setup(
+      "parityPresolve",
+      "Enable GF(2) parity presolve reduction",
+      "When on, applies a GF(2) parity-based presolve pass (parity_action) inside "
+      "the LP presolve (OsiPresolve). This pass identifies linear dependencies "
+      "modulo 2 among binary variables and uses them to fix or substitute variables, "
+      "potentially reducing problem size significantly on instances with parity "
+      "structure. Disable with 'off' to investigate correctness issues or to skip "
+      "on instances where this pass is slow or incorrect.");
 
   parameters_[CbcParam::SINGLETONBOUNDS]->setup(
       "singleton!Bounds",

@@ -354,6 +354,11 @@ public:
   /// Returns true if verbose preprocessing diagnostics are enabled.
   inline bool getInspect() const { return inspect_; }
 
+  /// Enable/disable GF(2) parity presolve reduction (parity_action).
+  inline void setParityPresolve(bool val) { parityPresolve_ = val; }
+  /// Returns true if GF(2) parity presolve is enabled.
+  inline bool getParityPresolve() const { return parityPresolve_; }
+
   /** Optional LP solver for cold-start LP solves inside preprocessing.
       When set, this function is called instead of \c initialSolve() on
       each fresh presolved model.  The function receives the
@@ -479,6 +484,9 @@ private:
 
   /// When true, print per-pass dimension and timing diagnostics during preprocessing.
   bool inspect_;
+
+  /// When true (default), apply GF(2) parity presolve inside OsiPresolve passes.
+  bool parityPresolve_;
   LpSolveFn lpSolver_;
 
   /// current elapsed or cpu time

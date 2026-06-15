@@ -188,6 +188,7 @@ public:
       USESOLUTION,
       HEURISTICSTATS,
       INSPECTPREPROCESSING,
+      PARITYPRESOLVE,
       LASTBOOLPARAM,
 
       // Keyword Parameters

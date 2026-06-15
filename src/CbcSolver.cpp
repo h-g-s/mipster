@@ -3919,6 +3919,8 @@ int CbcSolver::preprocess(
         babModel_->setKeepNamesPreproc(1);
       if (parameters_[CbcParam::INSPECTPREPROCESSING]->modeVal())
         process.setInspect(true);
+      if (!parameters_[CbcParam::PARITYPRESOLVE]->modeVal())
+        process.setParityPresolve(false);
 
       // Wire cold-start LP solver for preprocessing when racing or LPAuto is enabled.
       if (parameters_.getRacingLP() || parameters_.getLpMethod() == CbcParameters::LPAuto) {
