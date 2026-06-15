@@ -1688,9 +1688,9 @@ CglPreProcess::preProcessNonDefault(OsiSolverInterface &model,
     if ((tuning & 32) != 0)
       presolveActions |= 32;
     presolveActions |= 8;
+    if (!parityPresolve_)
+      presolveActions |= 0x8000;
     pinfo->setPresolveActions(presolveActions);
-    if (prohibited_)
-      assert(numberProhibited_ == originalModel_->getNumCols());
     presolvedModel =
       pinfo->presolvedModel(*originalModel_, feasibilityTolerance, true,
 			    5, prohibited_, true, rowType_,scBound);
@@ -2962,6 +2962,8 @@ CglPreProcess::preProcessNonDefault(OsiSolverInterface &model,
     // If trying for SOS don't allow some transfers
     if (makeEquality == 2 || makeEquality == 3)
       presolveActions |= 8;
+    if (!parityPresolve_)
+      presolveActions |= 0x8000;
     pinfo->setPresolveActions(presolveActions);
     if (prohibited_)
       assert(numberProhibited_ == oldModel->getNumCols());
@@ -8958,7 +8960,7 @@ CglPreProcess::CglPreProcess()
   , timeLimit_(COIN_DBL_MAX)
   , keepColumnNames_(false)
   , inspect_(false)
-  , lpSolver_(nullptr)
+  , parityPresolve_(true)
 {
   handler_ = new CoinMessageHandler();
   handler_->setLogLevel(2);
@@ -8981,7 +8983,7 @@ CglPreProcess::CglPreProcess(const CglPreProcess &rhs)
   , timeLimit_(COIN_DBL_MAX)
   , keepColumnNames_(false)
   , inspect_(rhs.inspect_)
-  , lpSolver_(rhs.lpSolver_)
+  , parityPresolve_(rhs.parityPresolve_)
 {
   if (defaultHandler_) {
     handler_ = new CoinMessageHandler();
@@ -9057,7 +9059,7 @@ CglPreProcess::operator=(const CglPreProcess &rhs)
     numberRowType_ = rhs.numberRowType_;
     options_ = rhs.options_;
     inspect_ = rhs.inspect_;
-    lpSolver_ = rhs.lpSolver_;
+    parityPresolve_ = rhs.parityPresolve_;
     if (defaultHandler_) {
       handler_ = new CoinMessageHandler();
       handler_->setLogLevel(rhs.handler_->logLevel());
