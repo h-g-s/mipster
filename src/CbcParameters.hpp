@@ -54,6 +54,7 @@
 #include "CbcHeuristicLocal.hpp"
 #include "CbcHeuristicPivotAndFix.hpp"
 #include "CbcHeuristicFeasibilityJump.hpp"
+#include "CbcHeuristicNoRelRepair.hpp"
 #include "CbcHeuristicRENS.hpp"
 #include "CbcHeuristicRINS.hpp"
 #include "CbcHeuristicRandRound.hpp"

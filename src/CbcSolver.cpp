@@ -177,6 +177,52 @@ void printGeneralMessage(CbcModel &model, std::string message, int type)
    }
 }
 
+static bool postprocessedSolutionFeasible(const OsiSolverInterface *solver,
+  const double *solution,
+  int solutionSize,
+  double primalTolerance,
+  double integerTolerance)
+{
+  if (!solver || !solution || solutionSize < solver->getNumCols())
+    return false;
+  const CoinPackedMatrix *matrixByRow = solver->getMatrixByRow();
+  if (!matrixByRow)
+    return false;
+
+  const double rowTolerance = std::max(1.0e-7, 10.0 * primalTolerance);
+  const int numberColumns = solver->getNumCols();
+  const double *columnLower = solver->getColLower();
+  const double *columnUpper = solver->getColUpper();
+  for (int iColumn = 0; iColumn < numberColumns; ++iColumn) {
+    const double value = solution[iColumn];
+    if (value < columnLower[iColumn] - rowTolerance || value > columnUpper[iColumn] + rowTolerance)
+      return false;
+    if (solver->isInteger(iColumn) && fabs(value - floor(value + 0.5)) > integerTolerance)
+      return false;
+  }
+
+  const int numberRows = solver->getNumRows();
+  const double *rowLower = solver->getRowLower();
+  const double *rowUpper = solver->getRowUpper();
+  const double *element = matrixByRow->getElements();
+  const int *column = matrixByRow->getIndices();
+  const CoinBigIndex *rowStart = matrixByRow->getVectorStarts();
+  const int *rowLength = matrixByRow->getVectorLengths();
+  for (int iRow = 0; iRow < numberRows; ++iRow) {
+    double activity = 0.0;
+    const CoinBigIndex start = rowStart[iRow];
+    const CoinBigIndex end = start + rowLength[iRow];
+    for (CoinBigIndex j = start; j < end; ++j)
+      activity += element[j] * solution[column[j]];
+    if (rowLower[iRow] > -1.0e20 && activity < rowLower[iRow] - rowTolerance)
+      return false;
+    if (rowUpper[iRow] < 1.0e20 && activity > rowUpper[iRow] + rowTolerance)
+      return false;
+  }
+
+  return true;
+}
+
 /** Write a solution validation report to a file.
  *  Calls ClpSimplex::checkSolution() to recompute violations, then writes
  *  a tab-separated report with feasibility status, error metrics, and
@@ -4850,6 +4896,7 @@ int CbcSolver::postprocess(
   if (babModel_->getMinimizationObjValue() < 1.0e50 && cbcParamCode == CbcParam::BAB) {
     // post process
     int n;
+    OsiSolverInterface *postprocessValidationSolver = NULL;
     if (preProcess_) {
       n = saveSolver_->getNumCols();
       bestSolution = new double[n];
@@ -4904,7 +4951,12 @@ int CbcSolver::postprocess(
         babModel_->solver()->setColSolution(bs);
       }
       setPreProcessingMode(babModel_->solver(), 2);
+      // CglPreProcess performs the raw unwind.  Cbc follows it with a repair
+      // pass for eliminated integer variables, so defer the warning until the
+      // repaired final incumbent has been checked below.
+      process.setDeferPostprocessInfeasibilityWarning(true);
       process.postProcess(*babModel_->solver());
+      process.setDeferPostprocessInfeasibilityWarning(false);
       // Restore B&B solver bounds after postProcess.
       if (!babLbSave.empty()) {
         int nBabCols = (int)babLbSave.size();
@@ -5087,6 +5139,7 @@ int CbcSolver::postprocess(
       babModel_->assignSolver(saveSolver_);
       memcpy(bestSolution, originalSolver->getColSolution(),
         n * sizeof(double));
+      postprocessValidationSolver = originalSolver_ ? originalSolver_ : originalSolver;
       // already set babModel_->setObjValue(babModel_->solver()->getObjValue());
     } else {
       n = babModel_->solver()->getNumCols();
@@ -5104,6 +5157,17 @@ int CbcSolver::postprocess(
       memcpy(upper, babModel_->solver()->getColUpper(),
         n2 * sizeof(double));
       originalSolver->resolve();
+    }
+    if (preProcess_) {
+      double primalTolerance = 1.0e-7;
+      if (postprocessValidationSolver)
+        postprocessValidationSolver->getDblParam(OsiPrimalTolerance, primalTolerance);
+      const double integerTolerance = babModel_->getIntegerTolerance();
+      if (!postprocessedSolutionFeasible(postprocessValidationSolver, bestSolution, n,
+            primalTolerance, integerTolerance)) {
+        printGeneralMessage(model_,
+          "Postprocessed model is infeasible - possible tolerance issue - try without preprocessing");
+      }
     }
     if (returnMode_ == 1) {
       model_.deleteSolutions();

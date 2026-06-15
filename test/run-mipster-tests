@@ -133,6 +133,7 @@ TESTS=(
   CInterfaceTest_upms
   CInterfaceTest_gap
   CInterfaceTest_parity
+  CInterfaceTest_norelrepair
 )
 
 TOTAL=${#TESTS[@]}

@@ -199,6 +199,7 @@ am_libmipster_la_OBJECTS = libmipster_la-CbcBab.lo \
 	libmipster_la-CbcHeuristicLocal.lo \
 	libmipster_la-CbcHeuristicPivotAndFix.lo \
 	libmipster_la-CbcHeuristicRandRound.lo \
+	libmipster_la-CbcHeuristicNoRelRepair.lo \
 	libmipster_la-CbcHeuristicFeasibilityJump.lo \
 	libmipster_la-CbcHeuristicRENS.lo \
 	libmipster_la-CbcHeuristicRINS.lo \
@@ -309,6 +310,7 @@ am__depfiles_remade = ./$(DEPDIR)/libmipster_la-CbcBab.Plo \
 	./$(DEPDIR)/libmipster_la-CbcHeuristicFeasibilityJump.Plo \
 	./$(DEPDIR)/libmipster_la-CbcHeuristicGreedy.Plo \
 	./$(DEPDIR)/libmipster_la-CbcHeuristicLocal.Plo \
+	./$(DEPDIR)/libmipster_la-CbcHeuristicNoRelRepair.Plo \
 	./$(DEPDIR)/libmipster_la-CbcHeuristicPivotAndFix.Plo \
 	./$(DEPDIR)/libmipster_la-CbcHeuristicRENS.Plo \
 	./$(DEPDIR)/libmipster_la-CbcHeuristicRINS.Plo \
@@ -659,6 +661,7 @@ libmipster_la_SOURCES = \
 	CbcHeuristicLocal.cpp CbcHeuristicLocal.hpp \
 	CbcHeuristicPivotAndFix.cpp CbcHeuristicPivotAndFix.hpp \
 	CbcHeuristicRandRound.cpp CbcHeuristicRandRound.hpp \
+	CbcHeuristicNoRelRepair.cpp CbcHeuristicNoRelRepair.hpp \
 	CbcHeuristicFeasibilityJump.cpp CbcHeuristicFeasibilityJump.hpp \
 	CbcHeuristicRENS.cpp CbcHeuristicRENS.hpp \
 	CbcHeuristicRINS.cpp CbcHeuristicRINS.hpp \
@@ -793,6 +796,7 @@ includecoin_HEADERS = \
 	CbcHeuristicLocal.hpp \
 	CbcHeuristicPivotAndFix.hpp \
 	CbcHeuristicRandRound.hpp \
+	CbcHeuristicNoRelRepair.hpp \
 	CbcHeuristicFeasibilityJump.hpp \
 	feasibilityjump.hh \
 	CbcHeuristicRENS.hpp \
@@ -1032,6 +1036,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libmipster_la-CbcHeuristicFeasibilityJump.Plo@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libmipster_la-CbcHeuristicGreedy.Plo@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libmipster_la-CbcHeuristicLocal.Plo@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libmipster_la-CbcHeuristicNoRelRepair.Plo@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libmipster_la-CbcHeuristicPivotAndFix.Plo@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libmipster_la-CbcHeuristicRENS.Plo@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libmipster_la-CbcHeuristicRINS.Plo@am__quote@ # am--include-marker
@@ -1432,6 +1437,13 @@ libmipster_la-CbcHeuristicRandRound.lo: CbcHeuristicRandRound.cpp
 @AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='CbcHeuristicRandRound.cpp' object='libmipster_la-CbcHeuristicRandRound.lo' libtool=yes @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(LIBTOOL) $(AM_V_lt) --tag=CXX $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libmipster_la_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o libmipster_la-CbcHeuristicRandRound.lo `test -f 'CbcHeuristicRandRound.cpp' || echo '$(srcdir)/'`CbcHeuristicRandRound.cpp
+
+libmipster_la-CbcHeuristicNoRelRepair.lo: CbcHeuristicNoRelRepair.cpp
+@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(LIBTOOL) $(AM_V_lt) --tag=CXX $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libmipster_la_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT libmipster_la-CbcHeuristicNoRelRepair.lo -MD -MP -MF $(DEPDIR)/libmipster_la-CbcHeuristicNoRelRepair.Tpo -c -o libmipster_la-CbcHeuristicNoRelRepair.lo `test -f 'CbcHeuristicNoRelRepair.cpp' || echo '$(srcdir)/'`CbcHeuristicNoRelRepair.cpp
+@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libmipster_la-CbcHeuristicNoRelRepair.Tpo $(DEPDIR)/libmipster_la-CbcHeuristicNoRelRepair.Plo
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='CbcHeuristicNoRelRepair.cpp' object='libmipster_la-CbcHeuristicNoRelRepair.lo' libtool=yes @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(LIBTOOL) $(AM_V_lt) --tag=CXX $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libmipster_la_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o libmipster_la-CbcHeuristicNoRelRepair.lo `test -f 'CbcHeuristicNoRelRepair.cpp' || echo '$(srcdir)/'`CbcHeuristicNoRelRepair.cpp
 
 libmipster_la-CbcHeuristicFeasibilityJump.lo: CbcHeuristicFeasibilityJump.cpp
 @am__fastdepCXX_TRUE@	$(AM_V_CXX)$(LIBTOOL) $(AM_V_lt) --tag=CXX $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libmipster_la_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT libmipster_la-CbcHeuristicFeasibilityJump.lo -MD -MP -MF $(DEPDIR)/libmipster_la-CbcHeuristicFeasibilityJump.Tpo -c -o libmipster_la-CbcHeuristicFeasibilityJump.lo `test -f 'CbcHeuristicFeasibilityJump.cpp' || echo '$(srcdir)/'`CbcHeuristicFeasibilityJump.cpp
@@ -2008,6 +2020,7 @@ distclean: distclean-recursive
 	-rm -f ./$(DEPDIR)/libmipster_la-CbcHeuristicFeasibilityJump.Plo
 	-rm -f ./$(DEPDIR)/libmipster_la-CbcHeuristicGreedy.Plo
 	-rm -f ./$(DEPDIR)/libmipster_la-CbcHeuristicLocal.Plo
+	-rm -f ./$(DEPDIR)/libmipster_la-CbcHeuristicNoRelRepair.Plo
 	-rm -f ./$(DEPDIR)/libmipster_la-CbcHeuristicPivotAndFix.Plo
 	-rm -f ./$(DEPDIR)/libmipster_la-CbcHeuristicRENS.Plo
 	-rm -f ./$(DEPDIR)/libmipster_la-CbcHeuristicRINS.Plo
@@ -2148,6 +2161,7 @@ maintainer-clean: maintainer-clean-recursive
 	-rm -f ./$(DEPDIR)/libmipster_la-CbcHeuristicFeasibilityJump.Plo
 	-rm -f ./$(DEPDIR)/libmipster_la-CbcHeuristicGreedy.Plo
 	-rm -f ./$(DEPDIR)/libmipster_la-CbcHeuristicLocal.Plo
+	-rm -f ./$(DEPDIR)/libmipster_la-CbcHeuristicNoRelRepair.Plo
 	-rm -f ./$(DEPDIR)/libmipster_la-CbcHeuristicPivotAndFix.Plo
 	-rm -f ./$(DEPDIR)/libmipster_la-CbcHeuristicRENS.Plo
 	-rm -f ./$(DEPDIR)/libmipster_la-CbcHeuristicRINS.Plo

@@ -61,6 +61,50 @@ static papiloStruct papiloPresolve(ClpSimplex * inModel,
 static ClpSimplex *postSolvedModel(papiloStruct papilo);
 #endif 
 
+static bool
+CglPostProcessSolutionFeasible(const OsiSolverInterface *model, double primalTolerance)
+{
+  if (!model)
+    return false;
+  const CoinPackedMatrix *matrixByRow = model->getMatrixByRow();
+  const double *solution = model->getColSolution();
+  if (!matrixByRow || !solution)
+    return false;
+
+  const double tolerance = std::max(1.0e-7, 10.0 * primalTolerance);
+  const int numberColumns = model->getNumCols();
+  const double *columnLower = model->getColLower();
+  const double *columnUpper = model->getColUpper();
+  for (int iColumn = 0; iColumn < numberColumns; ++iColumn) {
+    const double value = solution[iColumn];
+    if (value < columnLower[iColumn] - tolerance || value > columnUpper[iColumn] + tolerance)
+      return false;
+    if (model->isInteger(iColumn) && fabs(value - floor(value + 0.5)) > tolerance)
+      return false;
+  }
+
+  const int numberRows = model->getNumRows();
+  const double *rowLower = model->getRowLower();
+  const double *rowUpper = model->getRowUpper();
+  const double *element = matrixByRow->getElements();
+  const int *column = matrixByRow->getIndices();
+  const CoinBigIndex *rowStart = matrixByRow->getVectorStarts();
+  const int *rowLength = matrixByRow->getVectorLengths();
+  for (int iRow = 0; iRow < numberRows; ++iRow) {
+    double activity = 0.0;
+    const CoinBigIndex start = rowStart[iRow];
+    const CoinBigIndex end = start + rowLength[iRow];
+    for (CoinBigIndex j = start; j < end; ++j)
+      activity += element[j] * solution[column[j]];
+    if (rowLower[iRow] > -1.0e20 && activity < rowLower[iRow] - tolerance)
+      return false;
+    if (rowUpper[iRow] < 1.0e20 && activity > rowUpper[iRow] + tolerance)
+      return false;
+  }
+
+  return true;
+}
+
 OsiSolverInterface * 
 CglPreProcess::preProcess(OsiSolverInterface &model,
   bool makeEquality, int numberPasses)
@@ -5669,6 +5713,7 @@ tighten(double *colLower, double * colUpper,
    deleteStuff 0 - don't, 1 do (but not if infeasible), 2 always */
 void CglPreProcess::postProcess(OsiSolverInterface &modelIn, int deleteStuff)
 {
+  postprocessInfeasible_ = false;
   // Do presolves
   bool saveHint;
   bool solveWithDual = false;
@@ -6539,11 +6584,26 @@ void CglPreProcess::postProcess(OsiSolverInterface &modelIn, int deleteStuff)
 #endif
     originalSolver->getModelPtr()->setMaximumSeconds(-1.0);
 #endif
+  // Postprocessing solves the reconstructed original LP only to recover
+  // eliminated variables.  A stale B&B objective cutoff can incorrectly stop
+  // this feasibility reconstruction and report CGL_POST_INFEASIBLE.
+  double saveCutoff = 1.0e50;
+  bool hasCutoff = originalModel_->getDblParam(OsiDualObjectiveLimit, saveCutoff);
+  originalModel_->setDblParam(OsiDualObjectiveLimit, 1.0e50);
   originalModel_->initialSolve();
+  if (hasCutoff) {
+    originalModel_->setDblParam(OsiDualObjectiveLimit, saveCutoff);
+  }
   numberIterationsPost_ += originalModel_->getIterationCount();
   double objectiveValue = originalModel_->getObjValue();
   double testObj = 1.0e-8 * std::max(fabs(saveObjectiveValue), fabs(objectiveValue)) + 1.0e-4;
-  if (!originalModel_->isProvenOptimal()) {
+  double primalTolerance = 1.0e-7;
+  originalModel_->getDblParam(OsiPrimalTolerance, primalTolerance);
+  bool postprocessedFeasible = originalModel_->isProvenOptimal();
+  if (!postprocessedFeasible)
+    postprocessedFeasible = CglPostProcessSolutionFeasible(originalModel_, primalTolerance);
+  if (!postprocessedFeasible) {
+    postprocessInfeasible_ = true;
 #if COIN_DEVELOP
     whichMps++;
     sprintf(nameMps, "bad3_%d", whichMps);
@@ -6552,8 +6612,10 @@ void CglPreProcess::postProcess(OsiSolverInterface &modelIn, int deleteStuff)
       nameMps, __FILE__, __LINE__);
     printf("bad end unwind in postprocess\n");
 #endif
-    handler_->message(CGL_POST_INFEASIBLE, messages_)
-      << CoinMessageEol;
+    if (!deferPostprocessInfeasibilityWarning_) {
+      handler_->message(CGL_POST_INFEASIBLE, messages_)
+        << CoinMessageEol;
+    }
     if (deleteStuff) {
       for (int iPass = numberSolvers_ - 1; iPass >= 0; iPass--) {
         delete modifiedModel_[iPass];
@@ -8937,6 +8999,8 @@ CglPreProcess::CglPreProcess()
   , presolve_(NULL)
   , handler_(NULL)
   , defaultHandler_(true)
+  , deferPostprocessInfeasibilityWarning_(false)
+  , postprocessInfeasible_(false)
   , appData_(NULL)
   , originalColumn_(NULL)
   , originalRow_(NULL)
@@ -8968,6 +9032,8 @@ CglPreProcess::CglPreProcess()
 CglPreProcess::CglPreProcess(const CglPreProcess &rhs)
   : numberSolvers_(rhs.numberSolvers_)
   , defaultHandler_(rhs.defaultHandler_)
+  , deferPostprocessInfeasibilityWarning_(rhs.deferPostprocessInfeasibilityWarning_)
+  , postprocessInfeasible_(rhs.postprocessInfeasible_)
   , appData_(rhs.appData_)
   , originalColumn_(NULL)
   , originalRow_(NULL)
@@ -9056,6 +9122,8 @@ CglPreProcess::operator=(const CglPreProcess &rhs)
     numberIterationsPost_ = rhs.numberIterationsPost_;
     numberRowType_ = rhs.numberRowType_;
     options_ = rhs.options_;
+    deferPostprocessInfeasibilityWarning_ = rhs.deferPostprocessInfeasibilityWarning_;
+    postprocessInfeasible_ = rhs.postprocessInfeasible_;
     inspect_ = rhs.inspect_;
     lpSolver_ = rhs.lpSolver_;
     if (defaultHandler_) {

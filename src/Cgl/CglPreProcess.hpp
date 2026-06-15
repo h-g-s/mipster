@@ -320,6 +320,16 @@ public:
   {
     return &messages_;
   }
+  /// Defer CGL_POST_INFEASIBLE to a caller that performs extra repair.
+  inline void setDeferPostprocessInfeasibilityWarning(bool value)
+  {
+    deferPostprocessInfeasibilityWarning_ = value;
+  }
+  /// True if the last postProcess() ended with an infeasible reconstruction.
+  inline bool postprocessInfeasible() const
+  {
+    return postprocessInfeasible_;
+  }
   //@}
   //---------------------------------------------------------------------------
 
@@ -414,6 +424,10 @@ private:
 
   /// Cgl messages
   CoinMessages messages_;
+  /// Defer immediate postprocess infeasibility warning to caller.
+  bool deferPostprocessInfeasibilityWarning_;
+  /// Last postProcess() infeasibility status.
+  bool postprocessInfeasible_;
 
   /// Pointer to user-defined data structure
   void *appData_;

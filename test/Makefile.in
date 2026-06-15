@@ -127,8 +127,9 @@ bin_PROGRAMS = CInterfaceTest$(EXEEXT) \
 	CInterfaceTest_jssp_fixtures$(EXEEXT) \
 	CInterfaceTest_steiner$(EXEEXT) \
 	CInterfaceTest_fcnf_fixtures$(EXEEXT) \
-	CInterfaceTest_parity$(EXEEXT) CInterfaceTest_upms$(EXEEXT) \
-	CInterfaceTest_gap$(EXEEXT)
+	CInterfaceTest_parity$(EXEEXT) \
+	CInterfaceTest_norelrepair$(EXEEXT) \
+	CInterfaceTest_upms$(EXEEXT) CInterfaceTest_gap$(EXEEXT)
 noinst_PROGRAMS = gen_miclsp_solutions$(EXEEXT)
 subdir = test
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
@@ -260,6 +261,11 @@ CInterfaceTest_mis_DEPENDENCIES = ../src/libmipster.la
 am_CInterfaceTest_new_OBJECTS = CInterfaceTest_new.$(OBJEXT)
 CInterfaceTest_new_OBJECTS = $(am_CInterfaceTest_new_OBJECTS)
 CInterfaceTest_new_DEPENDENCIES = ../src/libmipster.la
+am_CInterfaceTest_norelrepair_OBJECTS =  \
+	CInterfaceTest_norelrepair.$(OBJEXT)
+CInterfaceTest_norelrepair_OBJECTS =  \
+	$(am_CInterfaceTest_norelrepair_OBJECTS)
+CInterfaceTest_norelrepair_DEPENDENCIES = ../src/libmipster.la
 am_CInterfaceTest_nursesched_OBJECTS =  \
 	CInterfaceTest_nursesched-CInterfaceTest_nursesched.$(OBJEXT)
 CInterfaceTest_nursesched_OBJECTS =  \
@@ -408,6 +414,7 @@ am__depfiles_remade = ./$(DEPDIR)/CInterfaceTest.Po \
 	./$(DEPDIR)/CInterfaceTest_mis-CInterfaceTest_mis.Po \
 	./$(DEPDIR)/CInterfaceTest_mis-dummy.Po \
 	./$(DEPDIR)/CInterfaceTest_new.Po \
+	./$(DEPDIR)/CInterfaceTest_norelrepair.Po \
 	./$(DEPDIR)/CInterfaceTest_nursesched-CInterfaceTest_nursesched.Po \
 	./$(DEPDIR)/CInterfaceTest_nursesched-dummy.Po \
 	./$(DEPDIR)/CInterfaceTest_parity-CInterfaceTest_parity.Po \
@@ -521,6 +528,8 @@ SOURCES = $(CInterfaceTest_SOURCES) \
 	$(nodist_EXTRA_CInterfaceTest_mis_SOURCES) \
 	$(CInterfaceTest_new_SOURCES) \
 	$(nodist_EXTRA_CInterfaceTest_new_SOURCES) \
+	$(CInterfaceTest_norelrepair_SOURCES) \
+	$(nodist_EXTRA_CInterfaceTest_norelrepair_SOURCES) \
 	$(CInterfaceTest_nursesched_SOURCES) \
 	$(nodist_EXTRA_CInterfaceTest_nursesched_SOURCES) \
 	$(CInterfaceTest_parity_SOURCES) \
@@ -1078,6 +1087,9 @@ CInterfaceTest_tsp_cuts_LDADD = ../src/libmipster.la
 CInterfaceTest_miplib_SOURCES = CInterfaceTest_miplib.c
 nodist_EXTRA_CInterfaceTest_miplib_SOURCES = dummy.cpp
 CInterfaceTest_miplib_LDADD = ../src/libmipster.la
+CInterfaceTest_norelrepair_SOURCES = CInterfaceTest_norelrepair.c
+nodist_EXTRA_CInterfaceTest_norelrepair_SOURCES = dummy.cpp
+CInterfaceTest_norelrepair_LDADD = ../src/libmipster.la
 
 ########################################################################
 #                   Pure binary problem tests (clique cuts)            #
@@ -1327,6 +1339,10 @@ CInterfaceTest_new$(EXEEXT): $(CInterfaceTest_new_OBJECTS) $(CInterfaceTest_new_
 	@rm -f CInterfaceTest_new$(EXEEXT)
 	$(AM_V_CXXLD)$(CXXLINK) $(CInterfaceTest_new_OBJECTS) $(CInterfaceTest_new_LDADD) $(LIBS)
 
+CInterfaceTest_norelrepair$(EXEEXT): $(CInterfaceTest_norelrepair_OBJECTS) $(CInterfaceTest_norelrepair_DEPENDENCIES) $(EXTRA_CInterfaceTest_norelrepair_DEPENDENCIES)
+	@rm -f CInterfaceTest_norelrepair$(EXEEXT)
+	$(AM_V_CXXLD)$(CXXLINK) $(CInterfaceTest_norelrepair_OBJECTS) $(CInterfaceTest_norelrepair_LDADD) $(LIBS)
+
 CInterfaceTest_nursesched$(EXEEXT): $(CInterfaceTest_nursesched_OBJECTS) $(CInterfaceTest_nursesched_DEPENDENCIES) $(EXTRA_CInterfaceTest_nursesched_DEPENDENCIES) 
 	@rm -f CInterfaceTest_nursesched$(EXEEXT)
 	$(AM_V_CXXLD)$(CXXLINK) $(CInterfaceTest_nursesched_OBJECTS) $(CInterfaceTest_nursesched_LDADD) $(LIBS)
@@ -1471,6 +1487,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/CInterfaceTest_mis-CInterfaceTest_mis.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/CInterfaceTest_mis-dummy.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/CInterfaceTest_new.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/CInterfaceTest_norelrepair.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/CInterfaceTest_nursesched-CInterfaceTest_nursesched.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/CInterfaceTest_nursesched-dummy.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/CInterfaceTest_parity-CInterfaceTest_parity.Po@am__quote@ # am--include-marker
@@ -2369,6 +2386,7 @@ distclean: distclean-am
 	-rm -f ./$(DEPDIR)/CInterfaceTest_mis-CInterfaceTest_mis.Po
 	-rm -f ./$(DEPDIR)/CInterfaceTest_mis-dummy.Po
 	-rm -f ./$(DEPDIR)/CInterfaceTest_new.Po
+	-rm -f ./$(DEPDIR)/CInterfaceTest_norelrepair.Po
 	-rm -f ./$(DEPDIR)/CInterfaceTest_nursesched-CInterfaceTest_nursesched.Po
 	-rm -f ./$(DEPDIR)/CInterfaceTest_nursesched-dummy.Po
 	-rm -f ./$(DEPDIR)/CInterfaceTest_parity-CInterfaceTest_parity.Po
@@ -2479,6 +2497,7 @@ maintainer-clean: maintainer-clean-am
 	-rm -f ./$(DEPDIR)/CInterfaceTest_mis-CInterfaceTest_mis.Po
 	-rm -f ./$(DEPDIR)/CInterfaceTest_mis-dummy.Po
 	-rm -f ./$(DEPDIR)/CInterfaceTest_new.Po
+	-rm -f ./$(DEPDIR)/CInterfaceTest_norelrepair.Po
 	-rm -f ./$(DEPDIR)/CInterfaceTest_nursesched-CInterfaceTest_nursesched.Po
 	-rm -f ./$(DEPDIR)/CInterfaceTest_nursesched-dummy.Po
 	-rm -f ./$(DEPDIR)/CInterfaceTest_parity-CInterfaceTest_parity.Po
@@ -2567,7 +2586,7 @@ miplib3_tests: CInterfaceTest_miplib$(EXEEXT)
 
 .PHONY: test
 
-ctests: CInterfaceTest$(EXEEXT) CInterfaceTest_tsp_random$(EXEEXT) CInterfaceTest_fl_random$(EXEEXT) CInterfaceTest_mdkp_random$(EXEEXT) CInterfaceTest_miclsp$(EXEEXT) CInterfaceTest_nursesched$(EXEEXT) CInterfaceTest_a1$(EXEEXT) CInterfaceTest_graphdraw$(EXEEXT) CInterfaceTest_trdta5581$(EXEEXT) CInterfaceTest_trd445c$(EXEEXT) CInterfaceTest_j3041_1$(EXEEXT) CInterfaceTest_yue20013$(EXEEXT) CInterfaceTest_etDecsi$(EXEEXT) CInterfaceTest_attfInst1$(EXEEXT) CbcSolverLpTest$(EXEEXT) CInterfaceTest_advanced$(EXEEXT) CInterfaceTest_colgen$(EXEEXT) CInterfaceTest_construction$(EXEEXT) CInterfaceTest_facility$(EXEEXT) CInterfaceTest_jssp$(EXEEXT) CInterfaceTest_kantorovich$(EXEEXT) CInterfaceTest_mip_reopt$(EXEEXT) CInterfaceTest_new$(EXEEXT) CInterfaceTest_tsp_cuts$(EXEEXT) CInterfaceTest_qap$(EXEEXT) CInterfaceTest_setcover$(EXEEXT) CInterfaceTest_setpacking$(EXEEXT) CInterfaceTest_setpartitioning$(EXEEXT) CInterfaceTest_bpc$(EXEEXT) CInterfaceTest_mis$(EXEEXT) CInterfaceTest_fcnf_fixtures$(EXEEXT) CInterfaceTest_parity$(EXEEXT)
+ctests: CInterfaceTest$(EXEEXT) CInterfaceTest_tsp_random$(EXEEXT) CInterfaceTest_fl_random$(EXEEXT) CInterfaceTest_mdkp_random$(EXEEXT) CInterfaceTest_miclsp$(EXEEXT) CInterfaceTest_nursesched$(EXEEXT) CInterfaceTest_a1$(EXEEXT) CInterfaceTest_graphdraw$(EXEEXT) CInterfaceTest_trdta5581$(EXEEXT) CInterfaceTest_trd445c$(EXEEXT) CInterfaceTest_j3041_1$(EXEEXT) CInterfaceTest_yue20013$(EXEEXT) CInterfaceTest_etDecsi$(EXEEXT) CInterfaceTest_attfInst1$(EXEEXT) CbcSolverLpTest$(EXEEXT) CInterfaceTest_advanced$(EXEEXT) CInterfaceTest_colgen$(EXEEXT) CInterfaceTest_construction$(EXEEXT) CInterfaceTest_facility$(EXEEXT) CInterfaceTest_jssp$(EXEEXT) CInterfaceTest_kantorovich$(EXEEXT) CInterfaceTest_mip_reopt$(EXEEXT) CInterfaceTest_new$(EXEEXT) CInterfaceTest_tsp_cuts$(EXEEXT) CInterfaceTest_qap$(EXEEXT) CInterfaceTest_setcover$(EXEEXT) CInterfaceTest_setpacking$(EXEEXT) CInterfaceTest_setpartitioning$(EXEEXT) CInterfaceTest_bpc$(EXEEXT) CInterfaceTest_mis$(EXEEXT) CInterfaceTest_fcnf_fixtures$(EXEEXT) CInterfaceTest_parity$(EXEEXT) CInterfaceTest_norelrepair$(EXEEXT)
 	MIPSTER_FIXTURE_DIR=$(abs_srcdir)/fixtures $(srcdir)/run-mipster-tests
 
 # Tell versions [3.59,3.63) of GNU make to not export all variables.

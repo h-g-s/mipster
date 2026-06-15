@@ -70,6 +70,7 @@ libmipster_la_SOURCES = \
 	CbcHeuristicLocal.cpp CbcHeuristicLocal.hpp \
 	CbcHeuristicPivotAndFix.cpp CbcHeuristicPivotAndFix.hpp \
 	CbcHeuristicRandRound.cpp CbcHeuristicRandRound.hpp \
+	CbcHeuristicNoRelRepair.cpp CbcHeuristicNoRelRepair.hpp \
 	CbcHeuristicFeasibilityJump.cpp CbcHeuristicFeasibilityJump.hpp \
 	CbcHeuristicRENS.cpp CbcHeuristicRENS.hpp \
 	CbcHeuristicRINS.cpp CbcHeuristicRINS.hpp \
@@ -213,6 +214,7 @@ includecoin_HEADERS = \
 	CbcHeuristicLocal.hpp \
 	CbcHeuristicPivotAndFix.hpp \
 	CbcHeuristicRandRound.hpp \
+	CbcHeuristicNoRelRepair.hpp \
 	CbcHeuristicFeasibilityJump.hpp \
 	feasibilityjump.hh \
 	CbcHeuristicRENS.hpp \

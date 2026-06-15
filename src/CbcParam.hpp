@@ -170,6 +170,7 @@ public:
       PIVOTANDCOMPLEMENT,
       PROXIMITY,
       RANDROUND,
+      NORELREPAIR,
       FEASIBILITYJUMP,
       RENS,
       RINS,
