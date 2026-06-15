@@ -267,8 +267,8 @@ build_variant() {
 }
 
 build_debug_variant
-build_variant "generic" "-O3 -ffp-contract=off"
-build_variant "avx2"    "-O3 -march=x86-64-v3 -ffp-contract=off"
+build_variant "generic" "-O3 -DNDEBUG -ffp-contract=off"
+build_variant "avx2"    "-O3 -DNDEBUG -march=x86-64-v3 -ffp-contract=off"
 
 # ── Headers ───────────────────────────────────────────────────────────────────
 cp -r "${BUILD_BASE}-generic/install/include/mipster" "${INSTALL_DIR}/include/"

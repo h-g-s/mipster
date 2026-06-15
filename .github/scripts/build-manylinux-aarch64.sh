@@ -274,10 +274,10 @@ build_debug_variant
 
 # Release builds follow.
 # ARMv8-A baseline: works on Raspberry Pi 3/4 (Cortex-A53/A72) and any AArch64
-build_variant "generic" "-O3 -march=armv8-a -ffp-contract=off"
+build_variant "generic" "-O3 -DNDEBUG -march=armv8-a -ffp-contract=off"
 # ARMv8.2-A: Cortex-A76 (RPi 5, hal), Graviton 2+, Neoverse N1
 # Adds FP16, dot product, DCPOP and other mandatory ARMv8.2 features
-build_variant "neon" "-O3 -march=armv8.2-a -ffp-contract=off"
+build_variant "neon" "-O3 -DNDEBUG -march=armv8.2-a -ffp-contract=off"
 
 # ── Compiled CPU-dispatch launcher ────────────────────────────────────────────
 echo ""

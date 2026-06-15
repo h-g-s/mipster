@@ -229,9 +229,9 @@ build_variant() {
 build_debug_variant
 
 # -ffp-contract=off: prevent FMA fusion from changing LP floating-point results
-build_variant "generic" "-O3 -ffp-contract=off"
+build_variant "generic" "-O3 -DNDEBUG -ffp-contract=off"
 # x86-64-v3 = AVX2 + BMI1/BMI2 + FMA (all Intel Macs from 2013+)
-build_variant "haswell" "-O3 -march=x86-64-v3 -ffp-contract=off"
+build_variant "haswell" "-O3 -DNDEBUG -march=x86-64-v3 -ffp-contract=off"
 
 # ── CPU-dispatch launcher ─────────────────────────────────────────────────────
 echo ""
