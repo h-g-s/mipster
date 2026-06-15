@@ -40,14 +40,18 @@ class ClpSimplex;
  *  message lines.
  *
  *  Usage (in CbcSolver.cpp):
- *    CbcPreprocHandler ph(fp, CbcOutput::useUtf8(), logLevel);
+ *    CbcPreprocHandler ph(fp, CbcOutput::useUtf8(), logLevel, inspect);
  *    process.passInMessageHandler(&ph);
  *    // ... call preProcessNonDefault() ...
  *    ph.printTableEnd();     // close table + processed model summary
+ *
+ *  When inspect is true (set from the INSPECTPREPROCESSING parameter), a
+ *  per-action presolve stats table is also printed at phase end via
+ *  CoinPrintPresolveStats().
  */
 class CBCLIB_EXPORT CbcPreprocHandler : public CoinMessageHandler {
 public:
-  CbcPreprocHandler(FILE *fp, bool utf8, int logLevel);
+  CbcPreprocHandler(FILE *fp, bool utf8, int logLevel, bool inspect = false);
 
   /** Destructor: auto-closes the preprocessing section if not already closed.
    *  This ensures the section banner is always printed even on early exits
@@ -99,6 +103,7 @@ private:
   bool infeasible_ = false;
   std::string infeasReason_;
   int passCount_ = 0;
+  bool inspect_ = false;        // print CoinPresolveStats on phase end
 
   // Stored processed-model stats (from CGL_PROCESS_STATS2)
   bool hasStats2_ = false;
