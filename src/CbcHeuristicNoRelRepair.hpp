@@ -8,10 +8,11 @@
 
 /** No-relaxation repair heuristic.
 
-    This heuristic targets flat-objective feasibility models where LP-guided
-    primal heuristics have little signal. It searches directly on row
-    violations, using compound moves for exact-one binary rows and coordinate
-    repair moves for remaining variables.
+    This heuristic targets models where LP-guided primal heuristics have little
+    signal. It searches directly on row violations, using compound moves for
+    exact-one binary rows and coordinate repair moves for remaining variables.
+    When the objective is nonzero, objective deltas are used only as a
+    secondary score behind violation repair.
 */
 class CBCLIB_EXPORT CbcHeuristicNoRelRepair : public CbcHeuristic {
 public:

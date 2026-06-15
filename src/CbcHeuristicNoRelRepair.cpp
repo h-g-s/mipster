@@ -33,6 +33,7 @@ struct NoRelMove {
   int col;
   double newValue;
   double delta;
+  double objectiveDelta;
 
   NoRelMove()
     : group(-1)
@@ -40,6 +41,7 @@ struct NoRelMove {
     , col(-1)
     , newValue(0.0)
     , delta(DBL_MAX)
+    , objectiveDelta(DBL_MAX)
   {
   }
 };
@@ -116,6 +118,35 @@ bool flatObjective(const OsiSolverInterface *solver)
       return false;
   }
   return true;
+}
+
+double objectiveDelta(const double *objective,
+  double objectiveSense,
+  int numDeltas,
+  const int *deltaCols,
+  const double *deltaValues)
+{
+  double delta = 0.0;
+  if (!objective)
+    return delta;
+  for (int k = 0; k < numDeltas; ++k) {
+    const int col = deltaCols[k];
+    if (col >= 0)
+      delta += objectiveSense * objective[col] * deltaValues[k];
+  }
+  return delta;
+}
+
+bool betterMove(double deltaViolation,
+  double deltaObjective,
+  const NoRelMove &bestMove)
+{
+  if (deltaViolation < bestMove.delta - 1.0e-9)
+    return true;
+  if (std::fabs(deltaViolation - bestMove.delta) <= 1.0e-9
+    && deltaObjective < bestMove.objectiveDelta - 1.0e-9)
+    return true;
+  return false;
 }
 
 bool buildSwitchGroups(const OsiSolverInterface *solver,
@@ -852,12 +883,14 @@ bool buildBatchedSeed(const OsiSolverInterface *solver,
   int trials,
   double startTime,
   double localTimeLimit,
+  double objectiveSense,
   double tolerance)
 {
   const int numCols = solver->getNumCols();
   const int numRows = solver->getNumRows();
   const double *colLower = solver->getColLower();
   const double *colUpper = solver->getColUpper();
+  const double *objective = solver->getObjCoefficients();
   const double *lpSolution = solver->getColSolution();
   const double *rowLower = solver->getRowLower();
   const double *rowUpper = solver->getRowUpper();
@@ -871,6 +904,7 @@ bool buildBatchedSeed(const OsiSolverInterface *solver,
   const int *colLength = matrixByCol->getVectorLengths();
 
   double bestPenalty = DBL_MAX;
+  double bestObjective = DBL_MAX;
   int bestLane = -1;
   const int batches = std::max(1, (trials + kNoRelBatchSize - 1) / kNoRelBatchSize);
 
@@ -943,6 +977,7 @@ bool buildBatchedSeed(const OsiSolverInterface *solver,
       const double delta = group.activeValue - group.inactiveValue;
       for (int lane = 0; lane < kNoRelBatchSize; ++lane) {
         double bestDeltaPenalty = DBL_MAX;
+        double bestDeltaObjective = DBL_MAX;
         int bestVar = group.vars[0];
         for (size_t k = 0; k < group.vars.size(); ++k) {
           const int col = group.vars[k];
@@ -956,9 +991,13 @@ bool buildBatchedSeed(const OsiSolverInterface *solver,
             const double newViol = rowViolation(oldActivity + colElement[p] * delta, rowLower[r], rowUpper[r], tolerance);
             deltaPenalty += rowWeight[r] * (newViol - oldViol);
           }
+          const double deltaObjective = objectiveSense * objective[col] * delta;
           deltaPenalty += 1.0e-7 * rng.uniform();
-          if (deltaPenalty < bestDeltaPenalty) {
+          if (deltaPenalty < bestDeltaPenalty - 1.0e-9
+            || (std::fabs(deltaPenalty - bestDeltaPenalty) <= 1.0e-9
+              && deltaObjective < bestDeltaObjective - 1.0e-9)) {
             bestDeltaPenalty = deltaPenalty;
+            bestDeltaObjective = deltaObjective;
             bestVar = col;
           }
         }
@@ -979,6 +1018,14 @@ bool buildBatchedSeed(const OsiSolverInterface *solver,
     double lanePenalty5 = 0.0;
     double lanePenalty6 = 0.0;
     double lanePenalty7 = 0.0;
+    double laneObjective0 = 0.0;
+    double laneObjective1 = 0.0;
+    double laneObjective2 = 0.0;
+    double laneObjective3 = 0.0;
+    double laneObjective4 = 0.0;
+    double laneObjective5 = 0.0;
+    double laneObjective6 = 0.0;
+    double laneObjective7 = 0.0;
 
     for (int r = 0; r < numRows; ++r) {
       const double *activity = &batchActivity[r * kNoRelBatchSize];
@@ -993,13 +1040,35 @@ bool buildBatchedSeed(const OsiSolverInterface *solver,
       lanePenalty7 += weight * rowViolation(activity[7], rowLower[r], rowUpper[r], tolerance);
     }
 
+    for (int j = 0; j < numCols; ++j) {
+      const double cost = objectiveSense * objective[j];
+      if (std::fabs(cost) <= 1.0e-15)
+        continue;
+      const double *x = &batchSolution[j * kNoRelBatchSize];
+      laneObjective0 += cost * x[0];
+      laneObjective1 += cost * x[1];
+      laneObjective2 += cost * x[2];
+      laneObjective3 += cost * x[3];
+      laneObjective4 += cost * x[4];
+      laneObjective5 += cost * x[5];
+      laneObjective6 += cost * x[6];
+      laneObjective7 += cost * x[7];
+    }
+
     const double lanePenalty[kNoRelBatchSize] = {
       lanePenalty0, lanePenalty1, lanePenalty2, lanePenalty3,
       lanePenalty4, lanePenalty5, lanePenalty6, lanePenalty7
     };
+    const double laneObjective[kNoRelBatchSize] = {
+      laneObjective0, laneObjective1, laneObjective2, laneObjective3,
+      laneObjective4, laneObjective5, laneObjective6, laneObjective7
+    };
     for (int lane = 0; lane < kNoRelBatchSize; ++lane) {
-      if (lanePenalty[lane] < bestPenalty) {
+      if (lanePenalty[lane] < bestPenalty - 1.0e-9
+        || (std::fabs(lanePenalty[lane] - bestPenalty) <= 1.0e-9
+          && laneObjective[lane] < bestObjective - 1.0e-9)) {
         bestPenalty = lanePenalty[lane];
+        bestObjective = laneObjective[lane];
         bestLane = lane;
         for (int j = 0; j < numCols; ++j)
           solution[j] = batchSolution[j * kNoRelBatchSize + lane];
@@ -1099,8 +1168,9 @@ int CbcHeuristicNoRelRepair::solution(double &objectiveValue, double *newSolutio
   OsiSolverInterface *solver = model_->solver();
   const int numCols = solver->getNumCols();
   const int numRows = solver->getNumRows();
-  if (!numCols || !numRows || !flatObjective(solver))
+  if (!numCols || !numRows)
     return 0;
+  const bool isFlatObjective = flatObjective(solver);
 
   const CoinPackedMatrix *matrixByRow = solver->getMatrixByRow();
   const CoinPackedMatrix *matrixByCol = solver->getMatrixByCol();
@@ -1120,7 +1190,7 @@ int CbcHeuristicNoRelRepair::solution(double &objectiveValue, double *newSolutio
   numRuns_++;
 
   std::vector< double > packedCandidate;
-  if (tryDisjunctivePackingFastPath(model_, solver, groups, varGroup, packedCandidate, tolerance)) {
+  if (isFlatObjective && tryDisjunctivePackingFastPath(model_, solver, groups, varGroup, packedCandidate, tolerance)) {
     acceptCandidate(solver, packedCandidate, objectiveValue, newSolution);
     if (model_->messageHandler()->logLevel() >= 1) {
       FILE *fp = model_->messageHandler()->filePointer();
@@ -1135,6 +1205,7 @@ int CbcHeuristicNoRelRepair::solution(double &objectiveValue, double *newSolutio
   const double *colLower = solver->getColLower();
   const double *colUpper = solver->getColUpper();
   const double *objective = solver->getObjCoefficients();
+  const double objectiveSense = solver->getObjSense();
   const double *rowLower = solver->getRowLower();
   const double *rowUpper = solver->getRowUpper();
 
@@ -1147,6 +1218,8 @@ int CbcHeuristicNoRelRepair::solution(double &objectiveValue, double *newSolutio
   const double cbcMaxSecs = model_->getMaximumSeconds();
   if (cbcMaxSecs > 0.0 && cbcMaxSecs < 1.0e50)
     localTimeLimit = std::max(0.01, std::min(localTimeLimit, cbcMaxSecs - startTime - 0.01));
+  if (!isFlatObjective)
+    localTimeLimit = std::min(localTimeLimit, 1.0);
   if (localTimeLimit <= 0.0)
     return 0;
 
@@ -1180,8 +1253,12 @@ int CbcHeuristicNoRelRepair::solution(double &objectiveValue, double *newSolutio
   seenVars.reserve(std::min(numCols, 2048));
 
   NoRelRng rng(static_cast< uint64_t >(model_->getRandomSeed()) + 1469598103934665603ULL);
-  const int scaledIterations = std::max(2000, std::min(maxIterations_, static_cast< int >(groups.size()) * 800));
-  const int seedTrials = std::max(kNoRelBatchSize * 16, std::min(16384, static_cast< int >(groups.size()) * 32));
+  const int iterationScale = isFlatObjective ? 800 : 200;
+  const int iterationCap = isFlatObjective ? maxIterations_ : std::min(maxIterations_, 5000);
+  const int scaledIterations = std::max(2000, std::min(iterationCap, static_cast< int >(groups.size()) * iterationScale));
+  const int seedCap = isFlatObjective ? 16384 : 2048;
+  const int seedScale = isFlatObjective ? 32 : 16;
+  const int seedTrials = std::max(kNoRelBatchSize * 16, std::min(seedCap, static_cast< int >(groups.size()) * seedScale));
   const int groupEvalCap = 256;
   const int varEvalCap = 512;
   double globalBestWeightedViolation = DBL_MAX;
@@ -1199,7 +1276,7 @@ int CbcHeuristicNoRelRepair::solution(double &objectiveValue, double *newSolutio
 
     const int restartSeedTrials = restart ? std::max(kNoRelBatchSize * 8, seedTrials / 4) : seedTrials;
     if (!buildBatchedSeed(solver, model_, matrixByRow, matrixByCol, varGroup, groups, rowWeight, solution, rowActivity,
-          batchSolution, batchActivity, rng, restartSeedTrials, startTime, localTimeLimit, tolerance))
+          batchSolution, batchActivity, rng, restartSeedTrials, startTime, localTimeLimit, objectiveSense, tolerance))
       break;
 
     int numViolated = 0;
@@ -1223,16 +1300,13 @@ int CbcHeuristicNoRelRepair::solution(double &objectiveValue, double *newSolutio
     for (int iter = 0; iter < scaledIterations; ++iter) {
       ++totalIterations;
       if (!numViolated) {
-        std::copy(solution.begin(), solution.end(), newSolution);
-        double obj = 0.0;
-        for (int j = 0; j < numCols; ++j)
-          obj += objective[j] * solution[j];
-        objectiveValue = obj * solver->getObjSense();
+        acceptCandidate(solver, solution, objectiveValue, newSolution);
         if (model_->messageHandler()->logLevel() >= 1) {
           FILE *fp = model_->messageHandler()->filePointer();
           if (!fp)
             fp = stdout;
-          fprintf(fp, "NoRelRepair found a feasible flat-objective solution after %d restart%s and %d iterations.\n",
+          fprintf(fp, "NoRelRepair found a feasible %s solution after %d restart%s and %d iterations.\n",
+            isFlatObjective ? "flat-objective" : "objective-aware",
             restart + 1, restart == 0 ? "" : "s", iter);
           fflush(fp);
         }
@@ -1295,11 +1369,13 @@ int CbcHeuristicNoRelRepair::solution(double &objectiveValue, double *newSolutio
           deltaValues[1] = group.activeValue - group.inactiveValue;
           const double delta = evaluateMove(solver, matrixByCol, rowActivity, rowViol, rowWeight,
             2, deltaCols, deltaValues, rowMark, touchedRows, newActivities, tolerance);
-          if (delta < bestMove.delta) {
+          const double deltaObj = objectiveDelta(objective, objectiveSense, 2, deltaCols, deltaValues);
+          if (betterMove(delta, deltaObj, bestMove)) {
             bestMove.group = groupIndex;
             bestMove.newActive = newActive;
             bestMove.col = -1;
             bestMove.delta = delta;
+            bestMove.objectiveDelta = deltaObj;
           }
         }
       }
@@ -1346,12 +1422,14 @@ int CbcHeuristicNoRelRepair::solution(double &objectiveValue, double *newSolutio
           deltaValues[0] = deltaValue;
           const double delta = evaluateMove(solver, matrixByCol, rowActivity, rowViol, rowWeight,
             1, deltaCols, deltaValues, rowMark, touchedRows, newActivities, tolerance);
-          if (delta < bestMove.delta) {
+          const double deltaObj = objectiveDelta(objective, objectiveSense, 1, deltaCols, deltaValues);
+          if (betterMove(delta, deltaObj, bestMove)) {
             bestMove.group = -1;
             bestMove.newActive = -1;
             bestMove.col = col;
             bestMove.newValue = candidateValues[kk];
             bestMove.delta = delta;
+            bestMove.objectiveDelta = deltaObj;
           }
         }
       }

@@ -3203,9 +3203,11 @@ void CbcParameters::addCbcSolverHeurParams()
 
   parameters_[CbcParam::NORELREPAIR]->setup(
     "noRelRepair", "Whether to use the no-relaxation repair heuristic",
-    "NoRelRepair is a primal heuristic for flat-objective feasibility models. "
-    "It searches directly on row violations, using compound exact-one binary "
-    "moves and coordinate repair moves rather than LP objective gradients. " HEURISTICS_LONGHELP);
+    "NoRelRepair is a primal heuristic for models with assignment-like switch "
+    "structure. It searches directly on row violations, using compound "
+    "exact-one binary moves and coordinate repair moves rather than LP "
+    "objective gradients; for nonzero objectives it uses objective deltas as "
+    "a secondary score behind feasibility repair. " HEURISTICS_LONGHELP);
 
   parameters_[CbcParam::FEASIBILITYJUMP]->setup(
     "feasibilityJump", "Whether to use the Feasibility Jump heuristic",

@@ -223,6 +223,23 @@ static bool postprocessedSolutionFeasible(const OsiSolverInterface *solver,
   return true;
 }
 
+static double solutionObjectiveValue(const OsiSolverInterface *solver,
+  const double *solution,
+  int solutionSize)
+{
+  if (!solver || !solution || solutionSize < solver->getNumCols())
+    return COIN_DBL_MAX;
+
+  double offset = 0.0;
+  solver->getDblParam(OsiObjOffset, offset);
+  double objectiveValue = -offset;
+  const double *objective = solver->getObjCoefficients();
+  const int numberColumns = solver->getNumCols();
+  for (int iColumn = 0; iColumn < numberColumns; ++iColumn)
+    objectiveValue += objective[iColumn] * solution[iColumn];
+  return objectiveValue * solver->getObjSense();
+}
+
 /** Write a solution validation report to a file.
  *  Calls ClpSimplex::checkSolution() to recompute violations, then writes
  *  a tab-separated report with feasibility status, error metrics, and
@@ -5169,14 +5186,17 @@ int CbcSolver::postprocess(
           "Postprocessed model is infeasible - possible tolerance issue - try without preprocessing");
       }
     }
+    const double postprocessedObjective = preProcess_
+      ? solutionObjectiveValue(postprocessValidationSolver ? postprocessValidationSolver : originalSolver, bestSolution, n)
+      : babModel_->getMinimizationObjValue();
     if (returnMode_ == 1) {
       model_.deleteSolutions();
       model_.setBestSolution(bestSolution, n,
-        babModel_->getMinimizationObjValue());
+        postprocessedObjective);
     }
     babModel_->deleteSolutions();
     babModel_->setBestSolution(
-      bestSolution, n, babModel_->getMinimizationObjValue());
+      bestSolution, n, postprocessedObjective);
     // and put back in very original solver
     {
       ClpSimplex *original = originalSolver->getModelPtr();

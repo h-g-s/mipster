@@ -1211,8 +1211,9 @@ int doHeuristics(CbcModel *model, int type, CbcParameters &parameters,
     model->addHeuristic(&heuristic13);
   }
 #endif
-  // NoRelRepair runs before other primal heuristics. It self-gates to flat
-  // objective feasibility models with exact-one binary rows.
+  // NoRelRepair runs before other primal heuristics. It self-gates to models
+  // with exact-one binary rows and uses objective deltas only as a secondary
+  // signal behind row-violation repair.
   if (useNoRelRepair >= kType && useNoRelRepair <= kType + 1) {
     CbcHeuristicNoRelRepair heuristicNoRel(*model);
     heuristicNoRel.setHeuristicName("NoRelRepair");

@@ -177,18 +177,21 @@ static int test_root_heuristic_finds_solution(void)
   return ok;
 }
 
-static int test_nonflat_self_gate(void)
+static int test_nonflat_objective_aware_repair(void)
 {
   Cbc_Model *m = build_pair_blocks(1, 0);
   configure_root_only(m, "on");
   Cbc_solve(m);
 
-  const int nsol = Cbc_numberSavedSolutions(m);
-  const int ok = nsol == 0 && Cbc_getNodeCount(m) == 0;
-  if (!ok)
-    printf("  FAIL nonflat_self_gate: nsol=%d nodes=%d\n", nsol, Cbc_getNodeCount(m));
-  else
-    printf("  PASS nonflat_self_gate\n");
+  int ok = require_feasible_pool(m, "nonflat_objective_aware");
+  const double obj = Cbc_getObjValue(m);
+  if (fabs(obj) > 1.0e-7) {
+    printf("  FAIL nonflat_objective_aware: expected objective 0, got %.12g\n", obj);
+    ok = 0;
+  }
+
+  if (ok)
+    printf("  PASS nonflat_objective_aware\n");
 
   Cbc_deleteModel(m);
   return ok;
@@ -264,6 +267,26 @@ static int test_preprocess_postprocess_feasible(void)
   return ok;
 }
 
+static int test_nonflat_preprocess_objective_aware_repair(void)
+{
+  Cbc_Model *m = build_pair_blocks(8, 0);
+  configure_root_only_with_preprocess(m, "on");
+  Cbc_solve(m);
+
+  int ok = require_feasible_pool(m, "nonflat_preprocess_objective_aware");
+  const double obj = Cbc_getObjValue(m);
+  if (fabs(obj) > 1.0e-7) {
+    printf("  FAIL nonflat_preprocess_objective_aware: expected objective 0, got %.12g\n", obj);
+    ok = 0;
+  }
+
+  if (ok)
+    printf("  PASS nonflat_preprocess_objective_aware\n");
+
+  Cbc_deleteModel(m);
+  return ok;
+}
+
 int main(void)
 {
   int pass = 0;
@@ -279,7 +302,7 @@ int main(void)
   else
     ++fail;
 
-  if (test_nonflat_self_gate())
+  if (test_nonflat_objective_aware_repair())
     ++pass;
   else
     ++fail;
@@ -295,6 +318,11 @@ int main(void)
     ++fail;
 
   if (test_preprocess_postprocess_feasible())
+    ++pass;
+  else
+    ++fail;
+
+  if (test_nonflat_preprocess_objective_aware_repair())
     ++pass;
   else
     ++fail;
