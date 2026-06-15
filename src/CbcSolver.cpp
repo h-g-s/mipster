@@ -937,12 +937,10 @@ static void printGeneralQueryHelp(int verbose,
 // Global variables (can we get rid of these?)
 //###########################################################################
 
-static int initialPumpTune = -1;
-
-#ifdef CGL_WRITEMPS
 extern double *debugSolution;
 extern int debugNumberColumns;
-#endif
+
+static int initialPumpTune = -1;
 
 static CbcModel *currentBranchModel = NULL;
 
@@ -1202,6 +1200,15 @@ int CbcSolver::applyLpMethod(bool applyPreprocessing)
   OsiSolverInterface *solver = model_.solver();
   OsiClpSolverInterface *si = getClpSolver(solver);
   ClpSimplex *clp = si ? si->getModelPtr() : nullptr;
+
+  // Wire the debug-cuts reference solution into the debugSolution global now,
+  // before bound propagation runs, so that CbcBoundPropagation can check
+  // fixings even before the OsiRowCutDebugger is activated (which only happens
+  // after the LP solve).
+  if (debugValues_ && !debugSolution) {
+    debugSolution = const_cast< double * >(debugValues_);
+    debugNumberColumns = numberDebugValues_;
+  }
 
   // ─── 1. Bound propagation ────────────────────────────────────────────────
   // Tightens bounds using MILP-based bound propagation before building the
@@ -3891,12 +3898,10 @@ int CbcSolver::preprocess(
       if ((model_.specialOptions() & 16777216) != 0 && model_.getCutoff() > 1.0e30) {
         osiclp->getModelPtr()->setMoreSpecialOptions(saveOptions | 262144);
       }
-#if DEBUG_PREPROCESS > 1
       if (debugValues_) {
-        process.setApplicationData(
-          const_cast< double * >(debugValues_));
+        debugSolution = const_cast< double * >(debugValues_);
+        debugNumberColumns = numberDebugValues_;
       }
-#endif
       if (parameters_[CbcParam::DEBUGFILE]->fileName() == "unitTest") {
         // This is probably wrong, will need to debug
         babModel_->solver()->activateRowCutDebugger(saveInputQueue_[0].c_str());
@@ -13117,10 +13122,8 @@ int CbcSolver::run(std::deque< std::string > inputQueue,
           if (nRead != static_cast< size_t >(numberDebugValues))
             throw("Error in fread");
           printf("%d doubles read into debugValues\n", numberDebugValues);
-#if DEBUG_PREPROCESS > 1
           debugSolution = debugValues;
           debugNumberColumns = numberDebugValues;
-#endif
           if (numberDebugValues < 200) {
             for (int i = 0; i < numberDebugValues; i++) {
               if (clpSolver->isInteger(i) && debugValues[i])

@@ -87,9 +87,32 @@ void OsiPresolve::gutsOfDestroy()
   This code is intended to allow a known solution to be checked
   against presolve progress. debugSolution is set in CbcSolver
 */
+#endif
 double *debugSolution = NULL;
 int debugNumberColumns = -1;
-#endif
+
+// Check whether any variable in the debug solution is excluded by current
+// presolve bounds.  Called after each TRACK_PRESOLVE action when debugSolution
+// is set.  Prints one line per excluded variable so the offending action name
+// is immediately visible.
+static void checkPresolveDebugSolution(const char *actionName,
+  const CoinPresolveMatrix *prob)
+{
+  if (!debugSolution || prob->ncols_ != debugNumberColumns)
+    return;
+  for (int i = 0; i < prob->ncols_; i++) {
+    if (!prob->isInteger(i))
+      continue;
+    int origCol = prob->originalColumn_ ? prob->originalColumn_[i] : i;
+    double val = debugSolution[origCol];
+    double lb = prob->clo_[i];
+    double ub = prob->cup_[i];
+    if (val < lb - 1e-6 || val > ub + 1e-6)
+      printf("presolve: %-30s col %d (orig %d) EXCLUDED  "
+             "bounds=[%g,%g]  opt_val=%g\n",
+        actionName, i, origCol, lb, ub, val);
+  }
+}
 /* This version of presolve returns a pointer to a new presolved
    model.  NULL if infeasible
 
@@ -425,7 +448,6 @@ OsiPresolve::presolvedModel(OsiSolverInterface &si,
       << nrowsAfter << -(nrows_ - nrowsAfter)
       << ncolsAfter << -(ncols_ - ncolsAfter)
       << nelsAfter << -(nelems_ - nelsAfter) << CoinMessageEol;
-#if DEBUG_PREPROCESS > 1
     if (debugSolution) {
       for (int i=0;i<ncolsAfter;i++) {
 	int iColumn = originalColumn_[i];
@@ -433,7 +455,6 @@ OsiPresolve::presolvedModel(OsiSolverInterface &si,
       }
       debugNumberColumns = ncolsAfter;
     }
-#endif
   } else {
     gutsOfDestroy();
     delete presolvedModel_;
@@ -849,6 +870,7 @@ bool break2(CoinPresolveMatrix *prob)
       if (rB!=rA || cB!=cA || nzB!=nzA) { \
         CoinAddPresolveStats(NAME, rB-rA, cB-cA, nzB-nzA); \
       } \
+      checkPresolveDebugSolution(NAME, prob); \
     } \
   } while(0)
 

@@ -101,6 +101,11 @@ extern int gomory_try;
 #include "CoinMpsIO.hpp"
 #include "CoinTime.hpp"
 
+// Reference solution loaded by -debugCuts; used to check for bad fixings
+// even before the OsiRowCutDebugger is activated.
+extern double *debugSolution;
+extern int debugNumberColumns;
+
 #include "CbcCompareActual.hpp"
 #include "CbcCompareObjective.hpp"
 #include "CbcTree.hpp"
@@ -1190,6 +1195,30 @@ void CbcModel::saveModel(OsiSolverInterface *saveSolver,
           }
         } else {
           numberFixed2++;
+        }
+      }
+      // Check RC fixings against the debug-cuts reference solution.
+      // getRowCutDebugger() is not active yet at this stage, so we use the
+      // debugSolution global which is set from the -debugCuts sol file.
+      {
+        const OsiRowCutDebugger *debugger = saveSolver->getRowCutDebugger();
+        const double *optSol = debugger
+          ? debugger->optimalSolution()
+          : (debugSolution && debugNumberColumns == saveSolver->getNumCols()
+               ? debugSolution : nullptr);
+        if (optSol) {
+          const double *newLB = saveSolver->getColLower();
+          const double *newUB = saveSolver->getColUpper();
+          for (int i = 0; i < numberIntegers_; i++) {
+            int col = integerVariable_[i];
+            const double sv = optSol[col];
+            if (newLB[col] > sv + 0.5 || newUB[col] < sv - 0.5) {
+              printf("reducedCostFix BAD FIXING: col %d (%s)"
+                     " bounds=[%g,%g] but optimal has %g\n",
+                     col, saveSolver->getColName(col).c_str(),
+                     newLB[col], newUB[col], sv);
+            }
+          }
         }
       }
 #ifdef COIN_DEVELOP
@@ -4687,6 +4716,28 @@ void CbcModel::branchAndBound(int doStatistics)
               // printf("%d has dj of %g - already fixed to %g\n",
               //     iColumn,djValue,lower[iColumn]);
               numberFixed2++;
+            }
+          }
+          // Check RC fixings against the debug-cuts reference solution.
+          {
+            const OsiRowCutDebugger *debugger = saveSolver->getRowCutDebugger();
+            const double *optSol = debugger
+              ? debugger->optimalSolution()
+              : (debugSolution && debugNumberColumns == saveSolver->getNumCols()
+                   ? debugSolution : nullptr);
+            if (optSol) {
+              const double *newLB = saveSolver->getColLower();
+              const double *newUB = saveSolver->getColUpper();
+              for (int i = 0; i < numberIntegers_; i++) {
+                int col = integerVariable_[i];
+                const double sv = optSol[col];
+                if (newLB[col] > sv + 0.5 || newUB[col] < sv - 0.5) {
+                  printf("reducedCostFix BAD FIXING: col %d (%s)"
+                         " bounds=[%g,%g] but optimal has %g\n",
+                         col, saveSolver->getColName(col).c_str(),
+                         newLB[col], newUB[col], sv);
+                }
+              }
             }
           }
 #ifdef COIN_DEVELOP

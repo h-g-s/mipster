@@ -10,6 +10,11 @@
 #include "OsiRowCutDebugger.hpp"
 #include "OsiSolverInterface.hpp"
 
+// Reference solution loaded by -debugCuts; set before applyLpMethod() so that
+// bound propagation can check fixings before the OsiRowCutDebugger is active.
+extern double *debugSolution;
+extern int debugNumberColumns;
+
 #include <cassert>
 #include <climits>
 #include <cmath>
@@ -43,15 +48,24 @@ bool CbcBoundPropagation::run(OsiSolverInterface *solver,
 
   const double t0 = CoinGetTimeOfDay();
 
-  // If a debugCuts reference solution is loaded AND we are currently on the
-  // optimal path (getRowCutDebugger returns non-NULL), check every bound
-  // fixing we apply against that solution.  getRowCutDebugger (without
-  // "Always") returns NULL at subtree nodes whose branching decisions have
-  // already excluded the reference solution — correct behaviour there is to
-  // fix variables differently from the global optimal, so we must NOT flag
-  // those.  Only on the optimal path is a contradictory fixing a bug.
+  // If a debugCuts reference solution is loaded, check every bound fixing we
+  // apply against that solution.
+  //
+  // Before the LP solve the OsiRowCutDebugger is not yet active, so we fall
+  // back to the debugSolution global which is populated from the -debugCuts
+  // sol file at the very start of applyLpMethod().
+  //
+  // During B&B we use getRowCutDebugger (without "Always"): it returns NULL
+  // at subtree nodes whose branching has already excluded the reference
+  // solution — fixing variables differently from the global optimal is correct
+  // there, so we must NOT flag those.  Only on the optimal path is a
+  // contradictory fixing a bug.
   const OsiRowCutDebugger *debugger = solver->getRowCutDebugger();
-  const double *optSol = debugger ? debugger->optimalSolution() : nullptr;
+  const double *optSol = debugger
+    ? debugger->optimalSolution()
+    : (debugSolution && debugNumberColumns == solver->getNumCols()
+         ? debugSolution
+         : nullptr);
 
   // Declare these early so they are in scope for the checkFixing lambda.
   // colType and curLB/curUB are set to their real values before phase 2.
@@ -88,6 +102,7 @@ bool CbcBoundPropagation::run(OsiSolverInterface *solver,
              " type=%s old=[%g,%g] new=[%g,%g] but optimal has %g\n",
              phase, diagRound, col, name.c_str(), ctName,
              oldLB, oldUB, newLB, newUB, sv);
+      fflush(stdout);
     }
   };
 
@@ -117,10 +132,15 @@ bool CbcBoundPropagation::run(OsiSolverInterface *solver,
     // Check singleton fixings against the reference solution (optimal path only).
     // curLB/curUB are not yet populated; oldLB/oldUB will show newLB/newUB.
     if (optSol) {
-      const double *lb = solver->getColLower();
-      const double *ub = solver->getColUpper();
+      // Capture stable copies — the raw pointers from getColLower/Upper() may
+      // be invalidated by intermediate solver calls (e.g. getColName(),
+      // isInteger()) that trigger internal array reallocation.
+      const double *rawLB = solver->getColLower();
+      const double *rawUB = solver->getColUpper();
+      const std::vector<double> lbVec(rawLB, rawLB + nCols);
+      const std::vector<double> ubVec(rawUB, rawUB + nCols);
       for (int j = 0; j < nCols; j++)
-        checkFixing(j, lb[j], ub[j], "singleton");
+        checkFixing(j, lbVec[j], ubVec[j], "singleton");
     }
 
     if (logLevel >= 2 && nTightened > 0)
