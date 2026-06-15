@@ -177,12 +177,13 @@ int CbcImportHandler::print()
   return 0; // always suppress immediate printing
 }
 
-CbcPreprocHandler::CbcPreprocHandler(FILE *fp, bool utf8, int logLevel)
+CbcPreprocHandler::CbcPreprocHandler(FILE *fp, bool utf8, int logLevel, bool inspect)
   : CoinMessageHandler(fp)
   , fp_(fp)
   , utf8_(utf8)
   , compact_(CbcOutput::useCompact())
   , phaseStartTime_(CoinWallclockTime())
+  , inspect_(inspect)
 {
   setLogLevel(logLevel);
   CoinClearPresolveStats();
@@ -388,7 +389,8 @@ void CbcPreprocHandler::printPhaseEnd(double totalTime)
   if (!fp_) return;
   if (totalTime < 0.0)
     totalTime = CoinWallclockTime() - phaseStartTime_;
-  CoinPrintPresolveStats();
+  if (inspect_)
+    CoinPrintPresolveStats();
 
   char summary[160];
   const std::string tStr = fmtTime(totalTime);

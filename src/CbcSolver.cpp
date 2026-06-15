@@ -3948,7 +3948,8 @@ int CbcSolver::preprocess(
         if (ll >= 1) {
           FILE *fp = babModel_->messageHandler()->filePointer();
           bool u8 = CbcOutput::useUtf8();
-          preprocHandler = new CbcPreprocHandler(fp, u8, ll);
+          bool inspect = parameters_[CbcParam::INSPECTPREPROCESSING]->modeVal() != 0;
+          preprocHandler = new CbcPreprocHandler(fp, u8, ll, inspect);
           process.passInMessageHandler(preprocHandler);
           fprintf(fp, "\n%s\n\n",
             CoinTable::phaseStart("Preprocessing", u8).c_str());
