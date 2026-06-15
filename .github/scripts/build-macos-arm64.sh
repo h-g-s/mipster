@@ -99,7 +99,7 @@ build_debug_variant
 
 # ── Build ─────────────────────────────────────────────────────────────────────
 echo ""
-echo "==> Building (arm64, ARMv8.5-A / M1 baseline)  CXXFLAGS='-O3 -march=armv8.5-a -ffp-contract=off'"
+echo "==> Building (arm64, ARMv8.5-A / M1 baseline)  CXXFLAGS='-O3 -DNDEBUG -march=armv8.5-a -ffp-contract=off'"
 
 rm -rf "${BUILD_DIR}"
 mkdir -p "${BUILD_DIR}"
@@ -112,7 +112,7 @@ cd "${BUILD_DIR}"
   --enable-static \
   --without-amd \
   '--with-lapack-lflags=-framework Accelerate' \
-  CXXFLAGS="-O3 -march=armv8.5-a -ffp-contract=off" \
+  CXXFLAGS="-O3 -DNDEBUG -march=armv8.5-a -ffp-contract=off" \
   LDFLAGS="-mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}" \
   2>&1 | tail -3
 

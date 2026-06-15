@@ -288,9 +288,9 @@ build_debug_variant
 
 # Release builds follow.
 # -ffp-contract=off: prevent FMA fusion from changing LP floating-point results
-build_variant "generic" "-O3 -ffp-contract=off"
+build_variant "generic" "-O3 -DNDEBUG -ffp-contract=off"
 # x86-64-v3 = AVX2 + BMI1/BMI2 + FMA (Haswell 2013+, AMD Zen2 2019+)
-build_variant "avx2" "-O3 -march=x86-64-v3 -ffp-contract=off"
+build_variant "avx2" "-O3 -DNDEBUG -march=x86-64-v3 -ffp-contract=off"
 
 # ── Compiled CPU-dispatch launcher ────────────────────────────────────────────
 echo ""
