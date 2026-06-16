@@ -628,6 +628,25 @@ slack_singleton_action::presolve(CoinPresolveMatrix *prob,
           if (allInt)
             continue; // leave as may help search
         }
+        // Symmetric protection: also leave negative-coefficient integer singletons
+        // in equality rows (rlo == rup). Without this, substituting col_i (coeff=-1)
+        // from "col_j - col_i = rhs" drops the col_j = col_i + rhs equality from the
+        // presolved model. The B&B then freely sets col_j to a wrong value, which
+        // propagates through postsolve.
+        if (coeff == -1.0 && currentLower == currentUpper) {
+          bool allInt = true;
+          for (CoinBigIndex j = mrstrt[iRow];
+               j < mrstrt[iRow] + hinrow[iRow]; j++) {
+            int iColumn = hcol[j];
+            double value = fabs(rowels[j]);
+            if (!integerType[iColumn] || value != 1.0) {
+              allInt = false;
+              break;
+            }
+          }
+          if (allInt)
+            continue; // leave as may help search
+        }
       }
       if (!prob->colProhibited(iCol)) {
         double currentLower = rlo[iRow];
@@ -728,6 +747,7 @@ slack_singleton_action::presolve(CoinPresolveMatrix *prob,
         // Row may be redundant but let someone else do that
         rlo[iRow] = newLower;
         rup[iRow] = newUpper;
+
         if (rowstat && sol) {
           // update solution and basis
           if ((sol[iCol] < cup[iCol] - ztolzb && sol[iCol] > clo[iCol] + ztolzb) || prob->columnIsBasic(iCol))
