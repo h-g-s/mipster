@@ -309,6 +309,8 @@ $MIPSTER_PREFIX/bin/mipster problem.mps -solve
 
 ## Testing & Debugging
 
+> ⚠️ **MIP debugging principle:** Small changes in a MIP solver can have deep, non-obvious root causes. Never accept a superficial explanation such as "disabling feature X makes it work" — that is a symptom, not a diagnosis. Always investigate *why*: trace the specific branching decisions, bound propagations, or cuts that lead to the wrong result. Use `mip_diag` and `OsiRowCutDebugger` to pinpoint the exact decision or state transition that triggers the bug, then fix the underlying cause.
+
 - **AddressSanitizer build:** `./configster --debug --sanitizer=asan --install` (installs to `$MIPSTER_PREFIX-dbg`)
 - **ThreadSanitizer build:** `./configster --debug --sanitizer=tsan --install` (installs to `$MIPSTER_PREFIX-tsan`)
 - `LD_LIBRARY_PATH` must include `.libs/` subdirs of each project when running binaries from the build tree (see `.vscode/launch.json` for the full path list)
