@@ -89,22 +89,15 @@ static void test_mip(void)
 
   Cbc_solve(m);
 
-  int is_optimal = Cbc_isProvenOptimal(m);
-
-  /* Feasibility of all solutions in the pool is always required */
+  /* Always validate every solution in the pool for feasibility */
   int fails = validate_all_saved_solutions(m, MIP_OPT, MIP_TOL, "trdtaunimep");
   CHECK(fails == 0, "all saved solutions feasible and objective on correct side");
 
-  /* If solver claims optimality, verify the objective matches the certified value */
-  if (is_optimal) {
+  /* Only check the exact objective if solver claims proven optimal */
+  if (Cbc_isProvenOptimal(m)) {
     double obj = Cbc_getObjValue(m);
     CHECK(fabs(obj - MIP_OPT) < MIP_TOL,
           "claimed optimal obj must match certified 2,780,434.839");
-  } else {
-    /* Not proven optimal within 300 nodes — acceptable as long as solutions are feasible */
-    printf("  note: not proven optimal within 300 nodes (feasibility checked above)\n");
-    ++tests_run;
-    ++tests_passed; /* not a failure */
   }
 
   Cbc_deleteModel(m);
