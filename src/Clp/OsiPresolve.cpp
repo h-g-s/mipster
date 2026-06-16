@@ -91,28 +91,6 @@ void OsiPresolve::gutsOfDestroy()
 double *debugSolution = NULL;
 int debugNumberColumns = -1;
 
-// Check whether any variable in the debug solution is excluded by current
-// presolve bounds.  Called after each TRACK_PRESOLVE action when debugSolution
-// is set.  Prints one line per excluded variable so the offending action name
-// is immediately visible.
-static void checkPresolveDebugSolution(const char *actionName,
-  const CoinPresolveMatrix *prob)
-{
-  if (!debugSolution || prob->ncols_ != debugNumberColumns)
-    return;
-  for (int i = 0; i < prob->ncols_; i++) {
-    if (!prob->isInteger(i))
-      continue;
-    int origCol = prob->originalColumn_ ? prob->originalColumn_[i] : i;
-    double val = debugSolution[origCol];
-    double lb = prob->clo_[i];
-    double ub = prob->cup_[i];
-    if (val < lb - 1e-6 || val > ub + 1e-6)
-      printf("presolve: %-30s col %d (orig %d) EXCLUDED  "
-             "bounds=[%g,%g]  opt_val=%g\n",
-        actionName, i, origCol, lb, ub, val);
-  }
-}
 /* This version of presolve returns a pointer to a new presolved
    model.  NULL if infeasible
 
@@ -851,11 +829,7 @@ bool break2(CoinPresolveMatrix *prob)
 #define possibleSkip
 #endif
 
-// This is the presolve loop.
-// It is a separate virtual function so that it can be easily
-// customized by subclassing CoinPresolve.
-
-
+// Track presolve stats for the handler inspection output
 #include "CoinPresolveMatrix.hpp"
 #define TRACK_PRESOLVE(NAME, STMT) \
   do { \
@@ -870,7 +844,6 @@ bool break2(CoinPresolveMatrix *prob)
       if (rB!=rA || cB!=cA || nzB!=nzA) { \
         CoinAddPresolveStats(NAME, rB-rA, cB-cA, nzB-nzA); \
       } \
-      checkPresolveDebugSolution(NAME, prob); \
     } \
   } while(0)
 
