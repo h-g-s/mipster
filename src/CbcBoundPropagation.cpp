@@ -60,10 +60,15 @@ bool CbcBoundPropagation::run(OsiSolverInterface *solver,
   // solution — fixing variables differently from the global optimal is correct
   // there, so we must NOT flag those.  Only on the optimal path is a
   // contradictory fixing a bug.
+  //
+  // Fallback to debugSolution only when no OsiRowCutDebugger has been
+  // activated at all (pre-B&B bound propagation). Once the debugger is
+  // active, debugger==NULL means we are on a wrong subtree — never check.
   const OsiRowCutDebugger *debugger = solver->getRowCutDebugger();
+  const OsiRowCutDebugger *debuggerAlways = solver->getRowCutDebuggerAlways();
   const double *optSol = debugger
     ? debugger->optimalSolution()
-    : (debugSolution && debugNumberColumns == solver->getNumCols()
+    : (!debuggerAlways && debugSolution && debugNumberColumns == solver->getNumCols()
          ? debugSolution
          : nullptr);
 

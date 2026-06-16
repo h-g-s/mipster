@@ -1204,7 +1204,8 @@ void CbcModel::saveModel(OsiSolverInterface *saveSolver,
         const OsiRowCutDebugger *debugger = saveSolver->getRowCutDebugger();
         const double *optSol = debugger
           ? debugger->optimalSolution()
-          : (debugSolution && debugNumberColumns == saveSolver->getNumCols()
+          : (!saveSolver->getRowCutDebuggerAlways() && debugSolution
+                && debugNumberColumns == saveSolver->getNumCols()
                ? debugSolution : nullptr);
         if (optSol) {
           const double *newLB = saveSolver->getColLower();
@@ -4723,7 +4724,8 @@ void CbcModel::branchAndBound(int doStatistics)
             const OsiRowCutDebugger *debugger = saveSolver->getRowCutDebugger();
             const double *optSol = debugger
               ? debugger->optimalSolution()
-              : (debugSolution && debugNumberColumns == saveSolver->getNumCols()
+              : (!saveSolver->getRowCutDebuggerAlways() && debugSolution
+                    && debugNumberColumns == saveSolver->getNumCols()
                    ? debugSolution : nullptr);
             if (optSol) {
               const double *newLB = saveSolver->getColLower();
@@ -7595,6 +7597,16 @@ void CbcModel::gutsOfCopy(const CbcModel &rhs, int mode)
   secsPrintFrequency_ = rhs.secsPrintFrequency_;
   printHeuristicsSummary_ = rhs.printHeuristicsSummary_;
   fastNodeDepth_ = rhs.fastNodeDepth_;
+  // Strip the +1000000 sentinel that branchAndBound() adds to mark that
+  // CbcGeneralDepth has already been inserted into the object list.  If this
+  // dirty value is inherited by a restarted sub-model (via gutsOfCopy mode 2),
+  // the sub-model's own branchAndBound() adds a CbcGeneralDepth with the
+  // wrong type (1000005 instead of 5), producing incorrect LP-bound estimates
+  // and wrong-optimal results.  The copy constructor already strips this
+  // sentinel (see the identical guard there); gutsOfCopy mode 2 must do the
+  // same.
+  if (fastNodeDepth_ >= 1000000 && fastNodeDepth_ < 1001000)
+    fastNodeDepth_ -= 1000000;
   nodeBoundProp_ = rhs.nodeBoundProp_;
   nodeBoundPropMaxDepth_ = rhs.nodeBoundPropMaxDepth_;
   nodeBoundPropMinDepth_ = rhs.nodeBoundPropMinDepth_;
@@ -7602,7 +7614,7 @@ void CbcModel::gutsOfCopy(const CbcModel &rhs, int mode)
   howOftenGlobalScan_ = rhs.howOftenGlobalScan_;
   maximumCutPassesAtRoot_ = rhs.maximumCutPassesAtRoot_;
   maximumCutPasses_ = rhs.maximumCutPasses_;
-    treeCutDepth_ = rhs.treeCutDepth_;
+  treeCutDepth_ = rhs.treeCutDepth_;
   randomSeed_ = rhs.randomSeed_;
   multipleRootTries_ = rhs.multipleRootTries_;
   preferredWay_ = rhs.preferredWay_;
