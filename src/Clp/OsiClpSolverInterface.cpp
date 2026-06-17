@@ -881,6 +881,12 @@ void OsiClpSolverInterface::initialSolve()
   }
   solver->messageHandler()->setLogLevel(saveMessageLevel);
 disaster:
+  // Always clear the disaster handler on modelPtr_ before cleanup.
+  // When solver == modelPtr_ (deleteSolver == false), goto disaster may have
+  // skipped the normal setDisasterHandler(NULL) call, leaving disasterArea_ set.
+  // When solver != modelPtr_ (deleteSolver == true), returnModel() below also
+  // clears it — this explicit clear is a cheap defensive belt-and-suspenders guard.
+  modelPtr_->setDisasterHandler(NULL);
   if (deleteSolver) {
     solver->returnModel(*modelPtr_);
     //#define DEBUG_BORROW
@@ -1528,6 +1534,9 @@ void OsiClpSolverInterface::resolve()
 disaster:
   //printf("basis after dual\n");
   //basis_.print();
+  // Clear disaster handler — a goto disaster from within resolve() may have
+  // skipped the normal setDisasterHandler(NULL) call after the LP solve.
+  modelPtr_->setDisasterHandler(NULL);
   if (!defaultHandler_)
     modelPtr_->popMessageHandler(saveHandler, oldDefault);
   modelPtr_->messageHandler()->setLogLevel(saveMessageLevel);
