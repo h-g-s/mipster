@@ -5,9 +5,12 @@
 
 #include "Cbc_C_Interface.h"
 #include <assert.h>
+#include <fcntl.h>
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 /* ── Test 1: Knapsack with Cbc_setParam ────────────────────────────── */
 void testKnapsackWithParams()
@@ -196,17 +199,40 @@ void testMIPStart()
   printf("  PASSED\n\n");
 }
 
-static int heuristic_stats_printed = 0;
-
-static void CBC_LINKAGE_CB stats_callback(Cbc_Model *model, int msgno, int ndouble,
-  const double *dvec, int nint, const int *ivec,
-  int nchar, char **cvec)
+/* helper: redirect stdout to a temp file, run solve, restore, search output */
+static int outputContains(const char *needle, Cbc_Model *m)
 {
-  if (msgno == 45 && nchar > 0 && cvec && cvec[0]) {
-    if (strstr(cvec[0], "Heuristic") != NULL) {
-      heuristic_stats_printed = 1;
+  char tmpfile[] = "/tmp/mipster_hstats_XXXXXX";
+  int fd = mkstemp(tmpfile);
+  if (fd < 0)
+    return -1;
+
+  fflush(stdout);
+  int saved_stdout = dup(STDOUT_FILENO);
+  dup2(fd, STDOUT_FILENO);
+
+  Cbc_solve(m);
+
+  fflush(stdout);
+  dup2(saved_stdout, STDOUT_FILENO);
+  close(saved_stdout);
+  close(fd);
+
+  /* scan captured output for needle */
+  FILE *f = fopen(tmpfile, "r");
+  int found = 0;
+  if (f) {
+    char line[1024];
+    while (fgets(line, sizeof(line), f)) {
+      if (strstr(line, needle)) {
+        found = 1;
+        break;
+      }
     }
+    fclose(f);
   }
+  unlink(tmpfile);
+  return found;
 }
 
 /* ── Test 5: Heuristic stats flag (-heuristicStats) ─────────────────── */
@@ -220,11 +246,10 @@ void testHeuristicStats()
   int n = 6;
   double cap = 47;
 
-  // Case 1: heuristicStats = off (default)
+  /* Case 1: heuristicStats = off — "Heuristics summary" must NOT appear */
   {
     Cbc_Model *m = Cbc_newModel();
-    Cbc_setObjSense(m, -1.0); /* maximize */
-
+    Cbc_setObjSense(m, -1.0);
     for (int i = 0; i < n; i++) {
       char name[8];
       snprintf(name, sizeof(name), "x%d", i);
@@ -232,26 +257,19 @@ void testHeuristicStats()
     }
     int idx[] = { 0, 1, 2, 3, 4, 5 };
     Cbc_addRow(m, "cap", n, idx, w, 'L', cap);
-
-    heuristic_stats_printed = 0;
-    Cbc_registerCallBack(m, stats_callback);
-
     Cbc_setParam(m, "log", "1");
     Cbc_setParam(m, "heuristicStats", "off");
 
-    Cbc_solve(m);
-
+    int found = outputContains("Heuristics summary", m);
     assert(Cbc_isProvenOptimal(m));
-    assert(heuristic_stats_printed == 0);
-
+    assert(found == 0);
     Cbc_deleteModel(m);
   }
 
-  // Case 2: heuristicStats = on
+  /* Case 2: heuristicStats = on — "Heuristics summary" MUST appear */
   {
     Cbc_Model *m = Cbc_newModel();
-    Cbc_setObjSense(m, -1.0); /* maximize */
-
+    Cbc_setObjSense(m, -1.0);
     for (int i = 0; i < n; i++) {
       char name[8];
       snprintf(name, sizeof(name), "x%d", i);
@@ -259,18 +277,12 @@ void testHeuristicStats()
     }
     int idx[] = { 0, 1, 2, 3, 4, 5 };
     Cbc_addRow(m, "cap", n, idx, w, 'L', cap);
-
-    heuristic_stats_printed = 0;
-    Cbc_registerCallBack(m, stats_callback);
-
     Cbc_setParam(m, "log", "1");
     Cbc_setParam(m, "heuristicStats", "on");
 
-    Cbc_solve(m);
-
+    int found = outputContains("Heuristics summary", m);
     assert(Cbc_isProvenOptimal(m));
-    assert(heuristic_stats_printed == 1);
-
+    assert(found == 1);
     Cbc_deleteModel(m);
   }
 
