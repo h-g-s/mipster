@@ -193,7 +193,7 @@ endif
 
 .PHONY: test
 
-bin_PROGRAMS = CInterfaceTest CInterfaceTest_tsp_random CInterfaceTest_fl_random CInterfaceTest_mdkp_random CInterfaceTest_miclsp CInterfaceTest_mescn CInterfaceTest_nursesched CInterfaceTest_a1 CInterfaceTest_graphdraw CInterfaceTest_trdta5581 CInterfaceTest_trd445c CInterfaceTest_trdtaunimep CInterfaceTest_j3041_1 CInterfaceTest_yue20013 CInterfaceTest_etDecsi CInterfaceTest_attfInst1 CbcSolverLpTest CglPathAggregationTest CInterfaceTest_advanced CInterfaceTest_colgen CInterfaceTest_construction CInterfaceTest_facility CInterfaceTest_jssp CInterfaceTest_kantorovich CInterfaceTest_mip_reopt CInterfaceTest_new CInterfaceTest_tsp_cuts CInterfaceTest_vrp CInterfaceTest_miplib CInterfaceTest_qap CInterfaceTest_setcover CInterfaceTest_setpacking CInterfaceTest_setpartitioning CInterfaceTest_bpc CInterfaceTest_mis CInterfaceTest_jssp_fixtures CInterfaceTest_steiner CInterfaceTest_fcnf_fixtures CInterfaceTest_parity CInterfaceTest_upms CInterfaceTest_gap
+bin_PROGRAMS = CInterfaceTest CInterfaceTest_tsp_random CInterfaceTest_fl_random CInterfaceTest_mdkp_random CInterfaceTest_miclsp CInterfaceTest_mescn CInterfaceTest_nursesched CInterfaceTest_a1 CInterfaceTest_graphdraw CInterfaceTest_trdta5581 CInterfaceTest_trd445c CInterfaceTest_trdtaunimep CInterfaceTest_j3041_1 CInterfaceTest_yue20013 CInterfaceTest_etDecsi CInterfaceTest_attfInst1 CbcSolverLpTest CglPathAggregationTest CInterfaceTest_advanced CInterfaceTest_colgen CInterfaceTest_construction CInterfaceTest_facility CInterfaceTest_jssp CInterfaceTest_kantorovich CInterfaceTest_mip_reopt CInterfaceTest_new CInterfaceTest_tsp_cuts CInterfaceTest_vrp CInterfaceTest_miplib CInterfaceTest_qap CInterfaceTest_setcover CInterfaceTest_setpacking CInterfaceTest_setpartitioning CInterfaceTest_bpc CInterfaceTest_mis CInterfaceTest_jssp_fixtures CInterfaceTest_steiner CInterfaceTest_fcnf_fixtures CInterfaceTest_parity CInterfaceTest_upms CInterfaceTest_gap CInterfaceTest_leo1
 
 noinst_PROGRAMS = gen_miclsp_solutions
 
@@ -477,6 +477,15 @@ CInterfaceTest_gap_SOURCES = CInterfaceTest_gap.c
 nodist_EXTRA_CInterfaceTest_gap_SOURCES = dummy.cpp
 CInterfaceTest_gap_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR=\"$(FIXTURE_DIR_VAL)\"
 CInterfaceTest_gap_LDADD = ../src/libmipster.la
+
+########################################################################
+#   leo1: MIPLIB 2017 — node-limited smoke test                        #
+########################################################################
+
+CInterfaceTest_leo1_SOURCES = CInterfaceTest_leo1.c
+nodist_EXTRA_CInterfaceTest_leo1_SOURCES = dummy.cpp
+CInterfaceTest_leo1_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR=\"$(FIXTURE_DIR_VAL)\"
+CInterfaceTest_leo1_LDADD = ../src/libmipster.la
 
 ########################################################################
 #             gen_miclsp_solutions — reference solution generator      #
