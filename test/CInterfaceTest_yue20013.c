@@ -197,7 +197,11 @@ static void test_mip_optimal(void)
   printf("test_mip_optimal\n");
   Cbc_Model *m = load_model();
 
-  Cbc_setDblParam(m, DBL_PARAM_TIME_LIMIT, 120.0);
+  /* Node limit is the deterministic primary stop; this instance reliably
+   * solves within ~360 nodes (seed 1).  The time limit is a loose wall-clock
+   * fallback only — never the primary criterion (ASAN runs can be slow). */
+  Cbc_setMaximumNodes(m, 10000);
+  Cbc_setDblParam(m, DBL_PARAM_TIME_LIMIT, 600.0);
   /* Disable ratio gap so the solver finds the exact integer optimal,
      regardless of platform-specific B&B ordering differences. */
   Cbc_setDblParam(m, DBL_PARAM_GAP_RATIO, 0.0);
