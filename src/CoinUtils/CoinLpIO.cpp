@@ -2076,6 +2076,7 @@ void CoinLpIO::readLp(const char *filename)
 	break;
       length--;
     }
+    free(problemName_);
     problemName_ = CoinStrdup(filename+length+1);
 #endif
     FILE *fp = fopen(filename, "r");
