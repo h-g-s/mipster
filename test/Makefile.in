@@ -129,7 +129,7 @@ bin_PROGRAMS = CInterfaceTest$(EXEEXT) \
 	CInterfaceTest_steiner$(EXEEXT) \
 	CInterfaceTest_fcnf_fixtures$(EXEEXT) \
 	CInterfaceTest_parity$(EXEEXT) CInterfaceTest_upms$(EXEEXT) \
-	CInterfaceTest_gap$(EXEEXT)
+	CInterfaceTest_gap$(EXEEXT) CInterfaceTest_leo1$(EXEEXT)
 noinst_PROGRAMS = gen_miclsp_solutions$(EXEEXT)
 subdir = test
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
@@ -234,6 +234,10 @@ am_CInterfaceTest_kantorovich_OBJECTS =  \
 CInterfaceTest_kantorovich_OBJECTS =  \
 	$(am_CInterfaceTest_kantorovich_OBJECTS)
 CInterfaceTest_kantorovich_DEPENDENCIES = ../src/libmipster.la
+am_CInterfaceTest_leo1_OBJECTS =  \
+	CInterfaceTest_leo1-CInterfaceTest_leo1.$(OBJEXT)
+CInterfaceTest_leo1_OBJECTS = $(am_CInterfaceTest_leo1_OBJECTS)
+CInterfaceTest_leo1_DEPENDENCIES = ../src/libmipster.la
 am_CInterfaceTest_mdkp_random_OBJECTS =  \
 	CInterfaceTest_mdkp_random.$(OBJEXT)
 CInterfaceTest_mdkp_random_OBJECTS =  \
@@ -404,6 +408,8 @@ am__depfiles_remade = ./$(DEPDIR)/CInterfaceTest.Po \
 	./$(DEPDIR)/CInterfaceTest_jssp_fixtures-CInterfaceTest_jssp_fixtures.Po \
 	./$(DEPDIR)/CInterfaceTest_jssp_fixtures-dummy.Po \
 	./$(DEPDIR)/CInterfaceTest_kantorovich.Po \
+	./$(DEPDIR)/CInterfaceTest_leo1-CInterfaceTest_leo1.Po \
+	./$(DEPDIR)/CInterfaceTest_leo1-dummy.Po \
 	./$(DEPDIR)/CInterfaceTest_mdkp_random.Po \
 	./$(DEPDIR)/CInterfaceTest_mescn.Po \
 	./$(DEPDIR)/CInterfaceTest_miclsp-CInterfaceTest_miclsp.Po \
@@ -514,6 +520,8 @@ SOURCES = $(CInterfaceTest_SOURCES) \
 	$(nodist_EXTRA_CInterfaceTest_jssp_fixtures_SOURCES) \
 	$(CInterfaceTest_kantorovich_SOURCES) \
 	$(nodist_EXTRA_CInterfaceTest_kantorovich_SOURCES) \
+	$(CInterfaceTest_leo1_SOURCES) \
+	$(nodist_EXTRA_CInterfaceTest_leo1_SOURCES) \
 	$(CInterfaceTest_mdkp_random_SOURCES) \
 	$(nodist_EXTRA_CInterfaceTest_mdkp_random_SOURCES) \
 	$(CInterfaceTest_mescn_SOURCES) \
@@ -1154,6 +1162,14 @@ CInterfaceTest_gap_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR=\"$(FIXTURE_DIR_VAL)\
 CInterfaceTest_gap_LDADD = ../src/libmipster.la
 
 ########################################################################
+#   leo1: MIPLIB 2017 — node-limited smoke test                        #
+########################################################################
+CInterfaceTest_leo1_SOURCES = CInterfaceTest_leo1.c
+nodist_EXTRA_CInterfaceTest_leo1_SOURCES = dummy.cpp
+CInterfaceTest_leo1_CPPFLAGS = $(AM_CPPFLAGS) -DFIXTURE_DIR=\"$(FIXTURE_DIR_VAL)\"
+CInterfaceTest_leo1_LDADD = ../src/libmipster.la
+
+########################################################################
 #             gen_miclsp_solutions — reference solution generator      #
 ########################################################################
 gen_miclsp_solutions_SOURCES = gen_miclsp_solutions.c
@@ -1316,6 +1332,10 @@ CInterfaceTest_jssp_fixtures$(EXEEXT): $(CInterfaceTest_jssp_fixtures_OBJECTS) $
 CInterfaceTest_kantorovich$(EXEEXT): $(CInterfaceTest_kantorovich_OBJECTS) $(CInterfaceTest_kantorovich_DEPENDENCIES) $(EXTRA_CInterfaceTest_kantorovich_DEPENDENCIES) 
 	@rm -f CInterfaceTest_kantorovich$(EXEEXT)
 	$(AM_V_CXXLD)$(CXXLINK) $(CInterfaceTest_kantorovich_OBJECTS) $(CInterfaceTest_kantorovich_LDADD) $(LIBS)
+
+CInterfaceTest_leo1$(EXEEXT): $(CInterfaceTest_leo1_OBJECTS) $(CInterfaceTest_leo1_DEPENDENCIES) $(EXTRA_CInterfaceTest_leo1_DEPENDENCIES) 
+	@rm -f CInterfaceTest_leo1$(EXEEXT)
+	$(AM_V_CXXLD)$(CXXLINK) $(CInterfaceTest_leo1_OBJECTS) $(CInterfaceTest_leo1_LDADD) $(LIBS)
 
 CInterfaceTest_mdkp_random$(EXEEXT): $(CInterfaceTest_mdkp_random_OBJECTS) $(CInterfaceTest_mdkp_random_DEPENDENCIES) $(EXTRA_CInterfaceTest_mdkp_random_DEPENDENCIES) 
 	@rm -f CInterfaceTest_mdkp_random$(EXEEXT)
@@ -1484,6 +1504,8 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/CInterfaceTest_jssp_fixtures-CInterfaceTest_jssp_fixtures.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/CInterfaceTest_jssp_fixtures-dummy.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/CInterfaceTest_kantorovich.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/CInterfaceTest_leo1-CInterfaceTest_leo1.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/CInterfaceTest_leo1-dummy.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/CInterfaceTest_mdkp_random.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/CInterfaceTest_mescn.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/CInterfaceTest_miclsp-CInterfaceTest_miclsp.Po@am__quote@ # am--include-marker
@@ -1680,6 +1702,20 @@ CInterfaceTest_jssp_fixtures-CInterfaceTest_jssp_fixtures.obj: CInterfaceTest_js
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='CInterfaceTest_jssp_fixtures.c' object='CInterfaceTest_jssp_fixtures-CInterfaceTest_jssp_fixtures.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(CInterfaceTest_jssp_fixtures_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o CInterfaceTest_jssp_fixtures-CInterfaceTest_jssp_fixtures.obj `if test -f 'CInterfaceTest_jssp_fixtures.c'; then $(CYGPATH_W) 'CInterfaceTest_jssp_fixtures.c'; else $(CYGPATH_W) '$(srcdir)/CInterfaceTest_jssp_fixtures.c'; fi`
+
+CInterfaceTest_leo1-CInterfaceTest_leo1.o: CInterfaceTest_leo1.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(CInterfaceTest_leo1_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT CInterfaceTest_leo1-CInterfaceTest_leo1.o -MD -MP -MF $(DEPDIR)/CInterfaceTest_leo1-CInterfaceTest_leo1.Tpo -c -o CInterfaceTest_leo1-CInterfaceTest_leo1.o `test -f 'CInterfaceTest_leo1.c' || echo '$(srcdir)/'`CInterfaceTest_leo1.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/CInterfaceTest_leo1-CInterfaceTest_leo1.Tpo $(DEPDIR)/CInterfaceTest_leo1-CInterfaceTest_leo1.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='CInterfaceTest_leo1.c' object='CInterfaceTest_leo1-CInterfaceTest_leo1.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(CInterfaceTest_leo1_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o CInterfaceTest_leo1-CInterfaceTest_leo1.o `test -f 'CInterfaceTest_leo1.c' || echo '$(srcdir)/'`CInterfaceTest_leo1.c
+
+CInterfaceTest_leo1-CInterfaceTest_leo1.obj: CInterfaceTest_leo1.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(CInterfaceTest_leo1_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT CInterfaceTest_leo1-CInterfaceTest_leo1.obj -MD -MP -MF $(DEPDIR)/CInterfaceTest_leo1-CInterfaceTest_leo1.Tpo -c -o CInterfaceTest_leo1-CInterfaceTest_leo1.obj `if test -f 'CInterfaceTest_leo1.c'; then $(CYGPATH_W) 'CInterfaceTest_leo1.c'; else $(CYGPATH_W) '$(srcdir)/CInterfaceTest_leo1.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/CInterfaceTest_leo1-CInterfaceTest_leo1.Tpo $(DEPDIR)/CInterfaceTest_leo1-CInterfaceTest_leo1.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='CInterfaceTest_leo1.c' object='CInterfaceTest_leo1-CInterfaceTest_leo1.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(CInterfaceTest_leo1_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -c -o CInterfaceTest_leo1-CInterfaceTest_leo1.obj `if test -f 'CInterfaceTest_leo1.c'; then $(CYGPATH_W) 'CInterfaceTest_leo1.c'; else $(CYGPATH_W) '$(srcdir)/CInterfaceTest_leo1.c'; fi`
 
 CInterfaceTest_miclsp-CInterfaceTest_miclsp.o: CInterfaceTest_miclsp.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(CInterfaceTest_miclsp_CPPFLAGS) $(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS) -MT CInterfaceTest_miclsp-CInterfaceTest_miclsp.o -MD -MP -MF $(DEPDIR)/CInterfaceTest_miclsp-CInterfaceTest_miclsp.Tpo -c -o CInterfaceTest_miclsp-CInterfaceTest_miclsp.o `test -f 'CInterfaceTest_miclsp.c' || echo '$(srcdir)/'`CInterfaceTest_miclsp.c
@@ -2026,6 +2062,20 @@ CInterfaceTest_jssp_fixtures-dummy.obj: dummy.cpp
 @AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='dummy.cpp' object='CInterfaceTest_jssp_fixtures-dummy.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(CInterfaceTest_jssp_fixtures_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o CInterfaceTest_jssp_fixtures-dummy.obj `if test -f 'dummy.cpp'; then $(CYGPATH_W) 'dummy.cpp'; else $(CYGPATH_W) '$(srcdir)/dummy.cpp'; fi`
+
+CInterfaceTest_leo1-dummy.o: dummy.cpp
+@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(CInterfaceTest_leo1_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT CInterfaceTest_leo1-dummy.o -MD -MP -MF $(DEPDIR)/CInterfaceTest_leo1-dummy.Tpo -c -o CInterfaceTest_leo1-dummy.o `test -f 'dummy.cpp' || echo '$(srcdir)/'`dummy.cpp
+@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/CInterfaceTest_leo1-dummy.Tpo $(DEPDIR)/CInterfaceTest_leo1-dummy.Po
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='dummy.cpp' object='CInterfaceTest_leo1-dummy.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(CInterfaceTest_leo1_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o CInterfaceTest_leo1-dummy.o `test -f 'dummy.cpp' || echo '$(srcdir)/'`dummy.cpp
+
+CInterfaceTest_leo1-dummy.obj: dummy.cpp
+@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(CInterfaceTest_leo1_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT CInterfaceTest_leo1-dummy.obj -MD -MP -MF $(DEPDIR)/CInterfaceTest_leo1-dummy.Tpo -c -o CInterfaceTest_leo1-dummy.obj `if test -f 'dummy.cpp'; then $(CYGPATH_W) 'dummy.cpp'; else $(CYGPATH_W) '$(srcdir)/dummy.cpp'; fi`
+@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/CInterfaceTest_leo1-dummy.Tpo $(DEPDIR)/CInterfaceTest_leo1-dummy.Po
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='dummy.cpp' object='CInterfaceTest_leo1-dummy.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(CInterfaceTest_leo1_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o CInterfaceTest_leo1-dummy.obj `if test -f 'dummy.cpp'; then $(CYGPATH_W) 'dummy.cpp'; else $(CYGPATH_W) '$(srcdir)/dummy.cpp'; fi`
 
 CInterfaceTest_miclsp-dummy.o: dummy.cpp
 @am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(CInterfaceTest_miclsp_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT CInterfaceTest_miclsp-dummy.o -MD -MP -MF $(DEPDIR)/CInterfaceTest_miclsp-dummy.Tpo -c -o CInterfaceTest_miclsp-dummy.o `test -f 'dummy.cpp' || echo '$(srcdir)/'`dummy.cpp
@@ -2412,6 +2462,8 @@ distclean: distclean-am
 	-rm -f ./$(DEPDIR)/CInterfaceTest_jssp_fixtures-CInterfaceTest_jssp_fixtures.Po
 	-rm -f ./$(DEPDIR)/CInterfaceTest_jssp_fixtures-dummy.Po
 	-rm -f ./$(DEPDIR)/CInterfaceTest_kantorovich.Po
+	-rm -f ./$(DEPDIR)/CInterfaceTest_leo1-CInterfaceTest_leo1.Po
+	-rm -f ./$(DEPDIR)/CInterfaceTest_leo1-dummy.Po
 	-rm -f ./$(DEPDIR)/CInterfaceTest_mdkp_random.Po
 	-rm -f ./$(DEPDIR)/CInterfaceTest_mescn.Po
 	-rm -f ./$(DEPDIR)/CInterfaceTest_miclsp-CInterfaceTest_miclsp.Po
@@ -2524,6 +2576,8 @@ maintainer-clean: maintainer-clean-am
 	-rm -f ./$(DEPDIR)/CInterfaceTest_jssp_fixtures-CInterfaceTest_jssp_fixtures.Po
 	-rm -f ./$(DEPDIR)/CInterfaceTest_jssp_fixtures-dummy.Po
 	-rm -f ./$(DEPDIR)/CInterfaceTest_kantorovich.Po
+	-rm -f ./$(DEPDIR)/CInterfaceTest_leo1-CInterfaceTest_leo1.Po
+	-rm -f ./$(DEPDIR)/CInterfaceTest_leo1-dummy.Po
 	-rm -f ./$(DEPDIR)/CInterfaceTest_mdkp_random.Po
 	-rm -f ./$(DEPDIR)/CInterfaceTest_mescn.Po
 	-rm -f ./$(DEPDIR)/CInterfaceTest_miclsp-CInterfaceTest_miclsp.Po

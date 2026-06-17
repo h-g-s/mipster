@@ -133,6 +133,7 @@ TESTS=(
   CInterfaceTest_fcnf_fixtures
   CInterfaceTest_upms
   CInterfaceTest_gap
+  CInterfaceTest_leo1
   CInterfaceTest_parity
 )
 
