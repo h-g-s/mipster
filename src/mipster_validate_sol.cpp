@@ -32,9 +32,10 @@
 
 /* ── Tolerances ─────────────────────────────────────────────────────── */
 
-static double PRIMAL_TOL = 1e-5; /* bound / constraint feasibility */
-static double INT_TOL = 1e-5;    /* integrality gap                 */
-static double OBJ_TOL = 1e-6;    /* relative objective discrepancy  */
+/* Relaxed defaults account for limited decimal places and rounding in .sol files */
+static double PRIMAL_TOL = 1e-4; /* bound / constraint feasibility */
+static double INT_TOL = 1e-4;    /* integrality gap                 */
+static double OBJ_TOL = 1e-4;    /* relative objective discrepancy  */
 
 /* ── Utilities ──────────────────────────────────────────────────────── */
 
