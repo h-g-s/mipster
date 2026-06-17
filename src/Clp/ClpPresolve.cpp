@@ -931,6 +931,9 @@ const CoinPresolveAction *ClpPresolve::presolve(CoinPresolveMatrix *prob)
   // GF(2) parity reduction — run early, before the main loop,
   // since it is a one-shot detection that can fix many binaries
   // and remove equality rows in bulk.
+  // TODO: add a presolveActions_ bit (like OsiPresolve's 0x8000) so this can
+  // be disabled independently from OsiPresolve's copy — currently there is no
+  // way to suppress this path without disabling all of ClpPresolve.
   if (prob->anyInteger() && !prob->status_) {
     paction_ = parity_action::presolve(prob, paction_);
     if (prob->status_)
