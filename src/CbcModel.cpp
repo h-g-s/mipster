@@ -4672,8 +4672,16 @@ void CbcModel::branchAndBound(int doStatistics)
           && (getCutoff() < 1.0e20 && getCutoff() < checkCutoffForRestart);
         int numberColumns = getNumCols();
         if (tryNewSearch) {
-          // adding increment back allows current best - tiny bit weaker
-          checkCutoffForRestart = getCutoff() + getCutoffIncrement();
+          // Update the threshold so the restart does NOT re-trigger on the
+          // same incumbent.  The original code used getCutoff()+increment
+          // which equals bestObjective and is strictly > getCutoff(), causing
+          // the check (getCutoff() < checkCutoffForRestart) to be TRUE at
+          // every subsequent B&B node — even when the incumbent never changed.
+          // That drove 263K+ spurious saveSolver re-solves and iterative RC
+          // fixing that accumulated over the whole run.  Setting the threshold
+          // to getCutoff() itself makes it FALSE until a strictly better
+          // incumbent lowers getCutoff() further.
+          checkCutoffForRestart = getCutoff();
 #if CBC_USEFUL_PRINTING > 1
           printf("after %d nodes, cutoff %g - looking\n", numberNodes_,
             getCutoff());
