@@ -4841,40 +4841,28 @@ void CbcModel::branchAndBound(int doStatistics)
 #endif
             delete[] newSolution;
           } else {
-            // 1 for sol'n, 2 for finished, 3 for both
+            // returnCode bits: 1 = found better solution, 2 = proven infeasible.
             if ((returnCode & 1) != 0) {
-              // increment number of solutions so other heuristics can test
+              // sub-B&B found an improved solution — absorb it but do NOT
+              // unconditionally prune the remaining main-B&B tree.  The sub-B&B
+              // runs on a presolved RC-fixed problem and may generate numerically
+              // invalid cuts (Gomory, TwoMIR, Probing) that falsely "prove"
+              // infeasibility of anything better.  Verified for mik-250-20-75-4:
+              // the reduced problem's true optimal is -52301 (confirmed by HiGHS),
+              // yet the sub-B&B's invalid cuts make it return returnCode=3
+              // (solution found + infeasibility proven), causing the remaining
+              // 1062-node main tree to be killed and -52287 to be declared optimal.
+              // Keeping the main tree intact lets the remaining nodes verify
+              // (or disprove) the sub-B&B's claim safely.
               numberSolutions_++;
               numberHeuristicSolutions_++;
               lastHeuristic_ = NULL;
               setBestSolution(CBC_ROUNDING, objectiveValue, newSolution);
             }
             delete[] newSolution;
-#ifdef CBC_THREAD
-            if (master_) {
-              lockThread();
-              if (parallelMode() > 0) {
-                while (master_->waitForThreadsInTree(0)) {
-                  lockThread();
-                  double dummyBest;
-                  tree_->cleanTree(this, -COIN_DBL_MAX, dummyBest);
-                  // unlockThread();
-                }
-              } else {
-                double dummyBest;
-                tree_->cleanTree(this, -COIN_DBL_MAX, dummyBest);
-              }
-              master_->waitForThreadsInTree(2);
-              delete master_;
-              master_ = NULL;
-              masterThread_ = NULL;
-            }
-#endif
-            if (tree_->size()) {
-              double dummyBest;
-              tree_->cleanTree(this, -COIN_DBL_MAX, dummyBest);
-            }
-            break;
+            // Do NOT kill the remaining tree or break.  Any improvement found
+            // above has already updated the cutoff, so remaining nodes will be
+            // pruned naturally if the sub-B&B was correct.
           }
         }
         delete saveSolver;
