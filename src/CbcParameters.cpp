@@ -2788,12 +2788,14 @@ void CbcParameters::addCbcSolverBoolParams() {
   parameters_[CbcParam::PARITYPRESOLVE]->setup(
       "parityPresolve",
       "Enable GF(2) parity presolve reduction",
-      "When on, applies a GF(2) parity-based presolve pass (parity_action) inside "
-      "the LP presolve (OsiPresolve). This pass identifies linear dependencies "
-      "modulo 2 among binary variables and uses them to fix or substitute variables, "
-      "potentially reducing problem size significantly on instances with parity "
-      "structure. Disable with 'off' to investigate correctness issues or to skip "
-      "on instances where this pass is slow or incorrect.");
+      "When on, applies a GF(2) parity-based presolve pass (parity_action) that "
+      "identifies linear dependencies modulo 2 among binary variables and uses them "
+      "to fix or substitute variables. The pass runs in two places: (1) inside "
+      "OsiPresolve during MIP preprocessing (CglPreProcess), and (2) inside "
+      "ClpPresolve when ClpPresolve is invoked with integer variables (e.g. during "
+      "the DW-heuristic integerPresolve pass). Setting 'off' disables both. "
+      "Disable to investigate correctness issues or to skip on instances where "
+      "this pass is slow or incorrect.");
 
   parameters_[CbcParam::SINGLETONBOUNDS]->setup(
       "singleton!Bounds",

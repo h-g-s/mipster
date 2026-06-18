@@ -3924,8 +3924,10 @@ int CbcSolver::preprocess(
         babModel_->setKeepNamesPreproc(1);
       if (parameters_[CbcParam::INSPECTPREPROCESSING]->modeVal())
         process.setInspect(true);
-      if (!parameters_[CbcParam::PARITYPRESOLVE]->modeVal())
+      if (!parameters_[CbcParam::PARITYPRESOLVE]->modeVal()) {
         process.setParityPresolve(false);
+        babModel_->setParityPresolveClp(false);
+      }
 
       // Wire cold-start LP solver for preprocessing when racing or LPAuto is enabled.
       if (parameters_.getRacingLP() || parameters_.getLpMethod() == CbcParameters::LPAuto) {
@@ -9199,6 +9201,8 @@ int CbcSolver::run(std::deque< std::string > inputQueue,
             int presolveOptions2 = presolveOptions & ~0x40000000;
             if ((presolveOptions2 & 0xffff) != 0)
               pinfo.setPresolveActions(presolveOptions2);
+            if (!parameters_[CbcParam::PARITYPRESOLVE]->modeVal())
+              pinfo.setDoParityPresolve(false);
             pinfo.setSubstitution(substitution);
             if ((printOptions & 1) != 0)
               pinfo.statistics();
@@ -12541,6 +12545,8 @@ int CbcSolver::run(std::deque< std::string > inputQueue,
             int presolveOptions2 = presolveOptions & ~0x40000000;
             if ((presolveOptions2 & 0xffff) != 0)
               pinfo.setPresolveActions(presolveOptions2);
+            if (!parameters_[CbcParam::PARITYPRESOLVE]->modeVal())
+              pinfo.setDoParityPresolve(false);
             if ((printOptions & 1) != 0)
               pinfo.statistics();
             double presolveTolerance = clpParameters[ClpParam::PRESOLVETOLERANCE]->dblVal();
