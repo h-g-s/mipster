@@ -6264,6 +6264,7 @@ CbcModel::CbcModel()
   strongInfo_[5] = 0;
   strongInfo_[6] = 0;
   keepNamesPreproc = false;
+  parityPresolveClp_ = true;
   solverCharacteristics_ = NULL;
   nodeCompare_ = new CbcCompareDefault();
   problemFeasibility_ = new CbcFeasibilityBase();
@@ -6455,6 +6456,7 @@ CbcModel::CbcModel(const OsiSolverInterface &rhs)
   strongInfo_[6] = 0;
   solverCharacteristics_ = NULL;
   keepNamesPreproc = false;
+  parityPresolveClp_ = true;
   nodeCompare_ = new CbcCompareDefault();
   problemFeasibility_ = new CbcFeasibilityBase();
   tree_ = new CbcTree();
@@ -6768,7 +6770,7 @@ CbcModel::CbcModel(const CbcModel &rhs, bool cloneHandler)
   strongInfo_[5] = rhs.strongInfo_[5];
   strongInfo_[6] = rhs.strongInfo_[6];
   keepNamesPreproc = rhs.keepNamesPreproc;
-  mipStart_ = rhs.mipStart_;
+  parityPresolveClp_ = rhs.parityPresolveClp_;
   solverCharacteristics_ = NULL;
   if (rhs.emptyWarmStart_)
     emptyWarmStart_ = rhs.emptyWarmStart_->clone();
@@ -7300,8 +7302,8 @@ CbcModel &CbcModel::operator=(const CbcModel &rhs)
     currentNumberCuts_ = rhs.currentNumberCuts_;
     maximumDepth_ = rhs.maximumDepth_;
     keepNamesPreproc = rhs.keepNamesPreproc;
+    parityPresolveClp_ = rhs.parityPresolveClp_;
     mipStart_ = rhs.mipStart_;
-    delete[] addedCuts_;
     delete[] walkback_;
     // These are only used as temporary arrays so need not be filled
     if (maximumNumberCuts_) {
@@ -19646,6 +19648,8 @@ bool CbcModel::integerPresolveThisModel(OsiSolverInterface *originalSolver,
       ClpPresolve pinfo;
       // printf("integerPresolve - temp switch off doubletons\n");
       // pinfo.setPresolveActions(4);
+      if (!parityPresolveClp_)
+        pinfo.setDoParityPresolve(false);
       ClpSimplex *model2 = pinfo.presolvedModel(*clp, 1.0e-8);
       if (!model2) {
         // presolve found to be infeasible

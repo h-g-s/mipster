@@ -236,6 +236,18 @@ public:
     else
       presolveActions_ |= 1024;
   }
+  /// Whether we want to apply GF(2) parity presolve (parity_action)
+  inline bool doParityPresolve() const
+  {
+    return (presolveActions_ & 0x20000) == 0;
+  }
+  inline void setDoParityPresolve(bool doParityPresolve)
+  {
+    if (doParityPresolve)
+      presolveActions_ &= ~0x20000;
+    else
+      presolveActions_ |= 0x20000;
+  }
   /// Whether we want to do twoxtwo part of presolve
   inline bool doTwoxTwo() const
   {

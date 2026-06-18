@@ -2932,6 +2932,10 @@ public:
     return keepNamesPreproc;
   }
 
+  /// Enable/disable GF(2) parity presolve inside ClpPresolve (e.g. integerPresolve).
+  inline void setParityPresolveClp(bool val) { parityPresolveClp_ = val; }
+  inline bool getParityPresolveClp() const { return parityPresolveClp_; }
+
   /** may be safer to use this overload method: c++ string libraries 
      * implementation may not be binary compatible */
   void setMIPStart(int count, const char **colNames, const double colValues[]);
@@ -3028,6 +3032,12 @@ private:
    *  (usefull in callbacks)
    **/
   bool keepNamesPreproc;
+
+  /** parityPresolveClp_
+   *  When false, disables the GF(2) parity presolve pass inside ClpPresolve
+   *  (e.g. during integerPresolve). Mirrored from the parityPresolve parameter.
+   **/
+  bool parityPresolveClp_;
 
   /** Warm start object produced by heuristic or strong branching
 
