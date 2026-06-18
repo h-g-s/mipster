@@ -35,6 +35,9 @@
 #include "CoinMpsIO.hpp"
 #include "CbcBoundPropagation.hpp"
 #include "CbcOutput.hpp"
+// debug-cuts globals (set by CbcSolver from the -debugCuts sol file)
+extern double *debugSolution;
+extern int debugNumberColumns;
 //==============================================================================
 
 CbcHeuristicNode::CbcHeuristicNode(const CbcHeuristicNode &rhs)
@@ -1093,6 +1096,32 @@ int CbcHeuristic::smallBranchAndBound(OsiSolverInterface *solver, int numberNode
       returnCode = 2; // so will be infeasible
     } else {
       setPreProcessingMode(solver2,0);
+      // Propagate the debug-cuts reference solution into the presolved sub-B&B
+      // solver so that OsiRowCutDebugger catches invalid cuts generated during
+      // the restart sub-B&B.  The main B&B's solver has the debugger, but
+      // solver2 is a CglPreProcess-reduced clone of continuousSolver_ (no cuts,
+      // no debugger).  Map the 270-column reference solution to the presolved
+      // column space via process.originalColumns() and activate the debugger.
+      if (numberNodes < 0 && debugSolution
+          && debugNumberColumns == solver->getNumCols()) {
+        const int *origCols = process.originalColumns();
+        int nCols2 = solver2->getNumCols();
+        if (origCols && nCols2 > 0) {
+          bool valid = true;
+          double *presolveSol = new double[nCols2];
+          for (int j = 0; j < nCols2; j++) {
+            int orig = origCols[j];
+            if (orig < 0 || orig >= debugNumberColumns) {
+              valid = false;
+              break;
+            }
+            presolveSol[j] = debugSolution[orig];
+          }
+          if (valid)
+            solver2->activateRowCutDebugger(presolveSol, false);
+          delete[] presolveSol;
+        }
+      }
 #ifdef CHECK_KNOWN_SOLUTION
       // Only way to get to work on restart
       if (numberNodes < 0 && solver->getRowCutDebugger()) {
