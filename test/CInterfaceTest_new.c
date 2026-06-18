@@ -277,6 +277,57 @@ void testHeuristicStats()
   printf("  PASSED\n\n");
 }
 
+/* ── Test 6: cut-enriched restart parameter path ───────────────────── */
+void testCutRestartForce()
+{
+  printf("Test 6: cutRestart force sanity check\n");
+
+  double p[] = { 10, 13, 18, 31, 7, 15 };
+  double w[] = { 11, 15, 20, 35, 10, 33 };
+  int n = 6;
+  double cap = 47;
+
+  Cbc_Model *m = Cbc_newModel();
+  Cbc_setObjSense(m, -1.0); /* maximize */
+
+  for (int i = 0; i < n; i++) {
+    char name[8];
+    snprintf(name, sizeof(name), "x%d", i);
+    Cbc_addCol(m, name, 0.0, 1.0, p[i], 1, 0, NULL, NULL);
+  }
+
+  int idx[] = { 0, 1, 2, 3, 4, 5 };
+  Cbc_addRow(m, "cap", n, idx, w, 'L', cap);
+
+  int rc = Cbc_setParam(m, "log", "0");
+  assert(rc == 0);
+  rc = Cbc_setParam(m, "cutRestart", "force");
+  assert(rc == 0);
+
+  char buf[64];
+  rc = Cbc_getParam(m, "cutRestart", buf, sizeof(buf));
+  assert(rc == 0);
+  assert(strcmp(buf, "force") == 0);
+
+  Cbc_solve(m);
+  assert(Cbc_isProvenOptimal(m));
+  assert(fabs(Cbc_getObjValue(m) - 41.0) < 1e-4);
+
+  const double *bestSol = Cbc_getColSolution(m);
+  assert(bestSol != NULL);
+  double maxViolRow = 0.0;
+  double maxViolCol = 0.0;
+  int rowIdx = -1;
+  int colIdx = -1;
+  assert(Cbc_checkFeasibility(m, bestSol, &maxViolRow, &rowIdx,
+           &maxViolCol, &colIdx));
+
+  printf("  Optimal obj = %g, feasibility row %.3g col %.3g\n",
+    Cbc_getObjValue(m), maxViolRow, maxViolCol);
+  Cbc_deleteModel(m);
+  printf("  PASSED\n\n");
+}
+
 int main()
 {
   printf("=== CBC C Interface Tests ===\n\n");
@@ -285,6 +336,7 @@ int main()
   testSolutionPool();
   testMIPStart();
   testHeuristicStats();
+  testCutRestartForce();
   printf("All tests PASSED!\n");
   return 0;
 }

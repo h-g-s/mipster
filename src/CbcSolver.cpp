@@ -10343,6 +10343,8 @@ int CbcSolver::run(std::deque< std::string > inputQueue,
             }
             babModel_->setNodeBoundProp(
               parameters[CbcParam::NODEBOUNDPROP]->modeVal());
+            babModel_->setCutRestart(
+              parameters[CbcParam::CUTRESTART]->modeVal());
             babModel_->setNodeBoundPropMaxDepth(
               parameters[CbcParam::NODEBOUNDPROPMAXDEPTH]->intVal());
             babModel_->setNodeBoundPropMinDepth(

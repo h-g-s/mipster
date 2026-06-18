@@ -216,6 +216,7 @@ public:
       USECGRAPH,
       BOUNDPROPLEVEL,
       LPMETHOD,
+      CUTRESTART,
       NODEBOUNDPROP,
       RACINGLP,
       LASTKWDPARAM,

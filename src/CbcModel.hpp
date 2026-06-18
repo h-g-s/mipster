@@ -255,6 +255,8 @@ private:
       evaluation.
     */
   bool solveWithCuts(OsiCuts &cuts, int numberTries, CbcNode *node);
+  /// Try a root-only restart on a clone that keeps root cuts and tightened bounds.
+  int tryCutEnrichedRestartAfterRoot();
   /** Generate one round of cuts - serial mode
       returns -
       0 - normal
@@ -2800,6 +2802,16 @@ public:
   {
     return nodeBoundProp_;
   }
+  /// Set whether to restart from the cut-enriched root model (0=off, 1=on, 2=force)
+  inline void setCutRestart(int value)
+  {
+    cutRestart_ = value;
+  }
+  /// Get whether to restart from the cut-enriched root model
+  inline int cutRestart() const
+  {
+    return cutRestart_;
+  }
   /// Set whether to print heuristic statistics summary at the end of solve
   inline void setPrintHeuristicsSummary(bool value)
   {
@@ -3344,6 +3356,8 @@ private:
   int fastNodeDepth_;
   /// Whether to run bound propagation at B&B nodes (0=off, 1=on)
   int nodeBoundProp_;
+  /// Whether to run a cut-enriched root restart (0=off, 1=auto, 2=force)
+  int cutRestart_;
   /// Maximum depth at which node bound propagation is applied
   int nodeBoundPropMaxDepth_;
   /// Minimum depth at which node bound propagation is applied

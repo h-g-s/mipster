@@ -642,6 +642,7 @@ void CbcParameters::addCbcParams() {
   parameters_[CbcParam::NODESTRATEGY]->setTopic("Branching");
   parameters_[CbcParam::SOSPRIORITIZE]->setTopic("Branching");
   parameters_[CbcParam::CUTOFFCONSTRAINT]->setTopic("Solving");
+  parameters_[CbcParam::CUTRESTART]->setTopic("MIP Preprocessing");
   parameters_[CbcParam::COMMANDPRINTLEVEL]->setTopic("Output");
   parameters_[CbcParam::INTPRINT]->setTopic("Output");
   parameters_[CbcParam::CHECKTIMEFREQ]->setTopic("Output");
@@ -819,6 +820,7 @@ void CbcParameters::setDefaults(int strategy) {
      parameters_[CbcParam::USECGRAPH]->setDefault("on");
      parameters_[CbcParam::BOUNDPROPLEVEL]->setDefault("milpbt");
      parameters_[CbcParam::LPMETHOD]->setDefault("auto");
+     parameters_[CbcParam::CUTRESTART]->setDefault("off");
      parameters_[CbcParam::NODEBOUNDPROP]->setDefault("on");
      parameters_[CbcParam::BOUNDPROPMAXROUNDS]->setDefault(100);
      parameters_[CbcParam::NODEBOUNDPROPMAXDEPTH]->setDefault(50);
@@ -1994,6 +1996,24 @@ void CbcParameters::addCbcSolverKwdParams() {
       CoinParam::displayPriorityHigh);
   parameters_[CbcParam::RACINGLP]->appendKwd("off", CbcParameters::ParamOff);
   parameters_[CbcParam::RACINGLP]->appendKwd("on", CbcParameters::ParamOn);
+
+  parameters_[CbcParam::CUTRESTART]->setup(
+    "cutR!estart",
+    "Restart from the root model after cuts and root bound propagation",
+    "When enabled, MIPster clones the root relaxation after cuts have been "
+    "generated and any root bound tightening has been applied, runs the "
+    "normal presolve/branch-and-bound machinery on that cut-enriched clone, "
+    "and imports any incumbent it finds. "
+    "  off:    disabled (default).\n"
+    "  on:     run only when root processing produced enough newly fixed "
+    "integer columns.\n"
+    "  force:  run whenever possible, intended for tests and diagnostics.");
+  parameters_[CbcParam::CUTRESTART]->appendKwd(
+    "off", CbcParameters::CutRestartOff);
+  parameters_[CbcParam::CUTRESTART]->appendKwd(
+    "on", CbcParameters::CutRestartOn);
+  parameters_[CbcParam::CUTRESTART]->appendKwd(
+    "force", CbcParameters::CutRestartForce);
 
   parameters_[CbcParam::NODEBOUNDPROP]->setup(
     "nodeBoundP!rop",

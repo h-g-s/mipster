@@ -282,6 +282,20 @@ public:
     LPEndMarker
   };
 
+  /*! \brief Whether to restart from the cut-enriched root model
+
+    - CutRestartOff: disabled.
+    - CutRestartOn: run after root cuts when the root relaxation produced
+                    enough new inactive integer columns.
+    - CutRestartForce: run after root cuts whenever possible, for diagnostics.
+  */
+  enum CutRestartMode {
+    CutRestartOff = 0,
+    CutRestartOn,
+    CutRestartForce,
+    CutRestartEndMarker
+  };
+
   /*! \brief Get bound propagation level */
   inline BoundPropLevel getBoundPropLevel() const
   {

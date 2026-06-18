@@ -11,6 +11,7 @@
 
 #include <cassert>
 #include <climits>
+#include <cstdio>
 #include <cstdlib>
 #include <cmath>
 #include <cfloat>
@@ -35,7 +36,16 @@
 #include "CoinMpsIO.hpp"
 #include "CbcBoundPropagation.hpp"
 #include "CbcOutput.hpp"
+#include "CoinFinite.hpp"
 //==============================================================================
+
+namespace {
+bool mipsterLogPostprocess()
+{
+  const char *value = getenv("MIPSTER_LOG_POSTPROCESS");
+  return value && value[0] && value[0] != '0';
+}
+}
 
 CbcHeuristicNode::CbcHeuristicNode(const CbcHeuristicNode &rhs)
 {
@@ -1717,11 +1727,106 @@ int CbcHeuristic::smallBranchAndBound(OsiSolverInterface *solver, int numberNode
             ClpSimplex *lpSolver = clpSolver->getModelPtr();
             lpSolver->setSpecialOptions(lpSolver->specialOptions() | 0x01000000); // say is Cbc (and in branch and bound)
           }
-          //if (fractionSmall_ < 1000000.0)
-	  setPreProcessingMode(model.solver(),2);
-          process.postProcess(*model.solver());
-	  setPreProcessingMode(solver,0);
-          if (solver->isProvenOptimal() && solver->getObjValue() * solver->getObjSenseInCbc() < cutoff) {
+          // Postsolve a clean solver reconstructed from the incumbent, not the
+          // live branch-and-bound node solver. If the subsearch stopped on a
+          // limit, model.solver() may contain the last node relaxation rather
+          // than the incumbent that drove getMinimizationObjValue().
+          const double *incumbent = model.bestSolution();
+          bool validIncumbent = incumbent != NULL;
+          if (mipsterLogPostprocess()) {
+            fprintf(stderr,
+              "MIPSTER_POST smallB&B name=%s modelStatus=%d/%d provenOpt=%d provenInf=%d "
+              "modelObj=%g cutoff=%g solver2=%dx%d incumbent=%p\n",
+              name.c_str(), model.status(), model.secondaryStatus(),
+              model.isProvenOptimal(), model.isProvenInfeasible(),
+              model.getMinimizationObjValue(), cutoff,
+              solver2->getNumRows(), solver2->getNumCols(),
+              static_cast< const void * >(incumbent));
+          }
+          if (validIncumbent) {
+            const int numberColumns2 = solver2->getNumCols();
+            const int numberRows2 = solver2->getNumRows();
+            const double *columnLower = solver2->getColLower();
+            const double *columnUpper = solver2->getColUpper();
+            for (int iColumn = 0; validIncumbent && iColumn < numberColumns2; iColumn++) {
+              const double value = incumbent[iColumn];
+              if (!CoinFinite(value) || value < columnLower[iColumn] - 1.0e-5 || value > columnUpper[iColumn] + 1.0e-5)
+                validIncumbent = false;
+              if (validIncumbent && isHeuristicInteger(solver2, iColumn) && fabs(value - floor(value + 0.5)) > 1.0e-5)
+                validIncumbent = false;
+            }
+            if (validIncumbent) {
+              const CoinPackedMatrix *rowCopy = solver2->getMatrixByRow();
+              const int *rowLength = rowCopy->getVectorLengths();
+              const double *elements = rowCopy->getElements();
+              const int *column = rowCopy->getIndices();
+              const CoinBigIndex *rowStart = rowCopy->getVectorStarts();
+              const double *rowLower = solver2->getRowLower();
+              const double *rowUpper = solver2->getRowUpper();
+              for (int iRow = 0; validIncumbent && iRow < numberRows2; iRow++) {
+                double activity = 0.0;
+                for (CoinBigIndex j = rowStart[iRow]; j < rowStart[iRow] + rowLength[iRow]; j++)
+                  activity += elements[j] * incumbent[column[j]];
+                if (activity < rowLower[iRow] - 1.0e-5 || activity > rowUpper[iRow] + 1.0e-5)
+                  validIncumbent = false;
+              }
+            }
+          }
+          if (!validIncumbent) {
+            returnCode = 0;
+            model_->messageHandler()->message(CBC_FPUMP1, model_->messages())
+              << "Restart incumbent failed processed-model validation; skipping postsolve"
+              << CoinMessageEol;
+          }
+          if (mipsterLogPostprocess())
+            fprintf(stderr, "MIPSTER_POST incumbent validation=%d\n",
+              validIncumbent ? 1 : 0);
+          OsiSolverInterface *postSolver = solver2->clone();
+          if (validIncumbent) {
+            const int numberColumns2 = postSolver->getNumCols();
+            double *roundedIncumbent = CoinCopyOfArray(incumbent, numberColumns2);
+            for (int iColumn = 0; iColumn < numberColumns2; iColumn++) {
+              if (isHeuristicInteger(postSolver, iColumn)) {
+                double value = floor(roundedIncumbent[iColumn] + 0.5);
+                roundedIncumbent[iColumn] = value;
+                postSolver->setColLower(iColumn, value);
+                postSolver->setColUpper(iColumn, value);
+              }
+            }
+            postSolver->setColSolution(roundedIncumbent);
+            delete[] roundedIncumbent;
+          }
+          if (validIncumbent) {
+            postSolver->setDblParam(OsiDualObjectiveLimit, COIN_DBL_MAX);
+            postSolver->resolve();
+            if (mipsterLogPostprocess()) {
+              fprintf(stderr,
+                "MIPSTER_POST reconstructed resolve provenOpt=%d provenInf=%d obj=%g rows=%d cols=%d\n",
+                postSolver->isProvenOptimal(), postSolver->isProvenPrimalInfeasible(),
+                postSolver->getObjValue() * postSolver->getObjSenseInCbc(),
+                postSolver->getNumRows(), postSolver->getNumCols());
+            }
+            if (!postSolver->isProvenOptimal()) {
+              validIncumbent = false;
+              returnCode = 0;
+              model_->messageHandler()->message(CBC_FPUMP1, model_->messages())
+                << "Restart incumbent failed reconstructed resolve; skipping postsolve"
+                << CoinMessageEol;
+            }
+          }
+          if (validIncumbent) {
+            // if (fractionSmall_ < 1000000.0)
+            setPreProcessingMode(postSolver, 2);
+            if (mipsterLogPostprocess())
+              fprintf(stderr, "MIPSTER_POST entering CglPreProcess::postProcess\n");
+            process.postProcess(*postSolver);
+            if (mipsterLogPostprocess())
+              fprintf(stderr, "MIPSTER_POST returned from CglPreProcess::postProcess solverOpt=%d obj=%g\n",
+                solver->isProvenOptimal(), solver->getObjValue() * solver->getObjSenseInCbc());
+            setPreProcessingMode(solver, 0);
+          }
+          delete postSolver;
+          if (validIncumbent && solver->isProvenOptimal() && solver->getObjValue() * solver->getObjSenseInCbc() < cutoff) {
             // Solution now back in solver
             int numberColumns = solver->getNumCols();
             memcpy(newSolution, solver->getColSolution(),

@@ -9,6 +9,8 @@
 #include <algorithm>
 #include <cfloat>
 #include <climits>
+#include <cstdio>
+#include <cstdlib>
 #include "CoinPragma.hpp" 
 #include "CglPreProcess.hpp"
 #include "CglMessage.hpp"
@@ -39,6 +41,21 @@
 static int whichMps = 0;
 char nameMps[50];
 #endif
+
+namespace {
+bool mipsterLogPostprocess()
+{
+  const char *value = getenv("MIPSTER_LOG_POSTPROCESS");
+  return value && value[0] && value[0] != '0';
+}
+
+bool mipsterLogPostprocessColumns()
+{
+  const char *value = getenv("MIPSTER_LOG_POSTPROCESS_COLUMNS");
+  return value && value[0] && value[0] != '0';
+}
+}
+
 #if CBC_USE_PAPILO
 #include "papilo/core/Problem.hpp"
 #include "papilo/core/Presolve.hpp"
@@ -5671,6 +5688,14 @@ tighten(double *colLower, double * colUpper,
    deleteStuff 0 - don't, 1 do (but not if infeasible), 2 always */
 void CglPreProcess::postProcess(OsiSolverInterface &modelIn, int deleteStuff)
 {
+  if (mipsterLogPostprocess()) {
+    fprintf(stderr,
+      "MIPSTER_POST CglPreProcess::postProcess start modelIn=%dx%d deleteStuff=%d "
+      "numberSolvers=%d cuts=%d original=%p\n",
+      modelIn.getNumRows(), modelIn.getNumCols(), deleteStuff,
+      numberSolvers_, cuts_.sizeRowCuts(),
+      static_cast< void * >(originalModel_));
+  }
   // Do presolves
   bool saveHint;
   bool solveWithDual = false;
@@ -5686,10 +5711,16 @@ void CglPreProcess::postProcess(OsiSolverInterface &modelIn, int deleteStuff)
   // Make sure cutoff is ignored
   modelM->setDblParam(OsiDualObjectiveLimit, 1.0e50);
   if (!modelM->isProvenOptimal()) {
+    if (mipsterLogPostprocess())
+      fprintf(stderr, "MIPSTER_POST initial postprocess model not optimal; resolving\n");
     CoinWarmStartBasis *slack = dynamic_cast< CoinWarmStartBasis * >(modelM->getEmptyWarmStart());
     modelM->setWarmStart(slack);
     delete slack;
     modelM->resolve();
+  }
+  if (mipsterLogPostprocess()) {
+    fprintf(stderr, "MIPSTER_POST after initial postprocess resolve provenOpt=%d obj=%g\n",
+      modelM->isProvenOptimal(), modelM->getObjValue() * modelM->getObjSenseInCbc());
   }
   double * scBound = NULL;
   if (modelM->isProvenOptimal()) {
@@ -5805,6 +5836,10 @@ void CglPreProcess::postProcess(OsiSolverInterface &modelIn, int deleteStuff)
     }
     // If some cuts add back rows
     if (cuts_.sizeRowCuts()) {
+      if (mipsterLogPostprocess()) {
+        fprintf(stderr, "MIPSTER_POST adding %d stored cuts to modelM %dx%d\n",
+          cuts_.sizeRowCuts(), modelM->getNumRows(), modelM->getNumCols());
+      }
       clonedCopy = modelM->clone();
       modelM = clonedCopy;
       int numberRowCuts = cuts_.sizeRowCuts();
@@ -5830,6 +5865,16 @@ void CglPreProcess::postProcess(OsiSolverInterface &modelIn, int deleteStuff)
     }
     for (int iPass = numberSolvers_ - 1; iPass >= 0; iPass--) {
       OsiSolverInterface *model = model_[iPass];
+      if (mipsterLogPostprocess()) {
+        fprintf(stderr,
+          "MIPSTER_POST pass %d begin modelM=%dx%d model=%p",
+          iPass, modelM ? modelM->getNumRows() : -1,
+          modelM ? modelM->getNumCols() : -1,
+          static_cast< void * >(model));
+        if (model)
+          fprintf(stderr, " modelDims=%dx%d", model->getNumRows(), model->getNumCols());
+        fprintf(stderr, "\n");
+      }
 #ifdef CBC_HAS_CLP
       OsiClpSolverInterface * postsolvedSolver =
 	getClpSolver(model);
@@ -5838,17 +5883,33 @@ void CglPreProcess::postProcess(OsiSolverInterface &modelIn, int deleteStuff)
 #endif
       int * original = NULL;
       if (model->getNumCols()) {
+        if (mipsterLogPostprocess())
+          fprintf(stderr, "MIPSTER_POST pass %d before getWarmStart from modelM\n", iPass);
         CoinWarmStartBasis *basis = dynamic_cast< CoinWarmStartBasis * >(modelM->getWarmStart());
+        if (mipsterLogPostprocess())
+          fprintf(stderr, "MIPSTER_POST pass %d got basis=%p\n", iPass,
+            static_cast< void * >(basis));
         if (basis) {
+          if (mipsterLogPostprocess())
+            fprintf(stderr, "MIPSTER_POST pass %d before setWarmStart on model\n", iPass);
           model->setWarmStart(basis);
+          if (mipsterLogPostprocess())
+            fprintf(stderr, "MIPSTER_POST pass %d after setWarmStart on model\n", iPass);
           delete basis;
         }
+        if (mipsterLogPostprocess())
+          fprintf(stderr, "MIPSTER_POST pass %d before modelM/model array reads\n", iPass);
         int numberColumns = modelM->getNumCols();
         const double *solutionM = modelM->getColSolution();
+        if (mipsterLogPostprocess())
+          fprintf(stderr, "MIPSTER_POST pass %d got solutionM=%p numberColumns=%d\n",
+            iPass, static_cast< const void * >(solutionM), numberColumns);
         const double *columnLower2 = model->getColLower();
         const double *columnUpper2 = model->getColUpper();
         const double *columnLower = modelM->getColLower();
         const double *columnUpper = modelM->getColUpper();
+        if (mipsterLogPostprocess())
+          fprintf(stderr, "MIPSTER_POST pass %d got bound arrays\n", iPass);
 	if (scBound) {
 	  // looks odd
 	  int numberColumns0 =
@@ -5869,6 +5930,15 @@ void CglPreProcess::postProcess(OsiSolverInterface &modelIn, int deleteStuff)
 	}
         int iColumn;
         for (iColumn = 0; iColumn < numberColumns; iColumn++) {
+          if (mipsterLogPostprocessColumns() && (iColumn < 5 || (iColumn & 255) == 0 || iColumn + 1 == numberColumns)) {
+            fprintf(stderr,
+              "MIPSTER_POST pass %d column %d/%d modelM integer=%d sol=%g boundsM=[%g,%g] bounds=[%g,%g]\n",
+              iPass, iColumn, numberColumns,
+              modelM->isInteger(iColumn) ? 1 : 0,
+              solutionM ? solutionM[iColumn] : COIN_DBL_MAX,
+              columnLower[iColumn], columnUpper[iColumn],
+              columnLower2[iColumn], columnUpper2[iColumn]);
+          }
           if (modelM->isInteger(iColumn)) {
             double value = solutionM[iColumn];
             double value2 = floor(value + 0.5);
@@ -5908,6 +5978,9 @@ void CglPreProcess::postProcess(OsiSolverInterface &modelIn, int deleteStuff)
         // correct integer solution) to model.
         {
           int nc = model->getNumCols();
+          if (mipsterLogPostprocess())
+            fprintf(stderr, "MIPSTER_POST pass %d copying solution to model nc=%d numberColumns=%d\n",
+              iPass, nc, numberColumns);
           double *newSol = new double[nc];
           const double *oldSol = model->getColSolution();
           const double *solM = modelM->getColSolution();
@@ -5926,28 +5999,46 @@ void CglPreProcess::postProcess(OsiSolverInterface &modelIn, int deleteStuff)
             newSol[i] = std::max(newSol[i], lo[i]);
             newSol[i] = std::min(newSol[i], hi[i]);
           }
+          if (mipsterLogPostprocess())
+            fprintf(stderr, "MIPSTER_POST pass %d before setColSolution\n", iPass);
           model->setColSolution(newSol);
+          if (mipsterLogPostprocess())
+            fprintf(stderr, "MIPSTER_POST pass %d after setColSolution\n", iPass);
           delete[] newSol;
         }
       }
       // After the fix loop has tightened bounds (fixing integers), the warm-start
-      // basis stored on model may be stale: variables that are now fixed (lo==hi)
-      // could be BASIC in the warm start at fractional LP-relaxation values. CLP's
-      // dual simplex would then declare the basis "optimal" in 0 iterations without
-      // checking primal feasibility, returning the old LP relaxation solution.
-      // Fix: mark all fixed (lo==hi) variables as non-basic (atLowerBound) in the
-      // warm start so CLP will re-solve from a primal-feasible point.
+      // basis stored on model may be stale or dimensionally incompatible with the
+      // reconstructed model. Repair compatible bases, otherwise discard the basis
+      // and let the solver build a fresh one for the initialSolve below.
       {
-        CoinWarmStartBasis *wsb = dynamic_cast<CoinWarmStartBasis*>(model->getWarmStart());
+        if (mipsterLogPostprocess())
+          fprintf(stderr, "MIPSTER_POST pass %d checking warm-start dimensions\n", iPass);
+        CoinWarmStartBasis *wsb = dynamic_cast< CoinWarmStartBasis * >(model->getWarmStart());
+        const int nc = model->getNumCols();
+        const int nr = model->getNumRows();
         if (wsb) {
-          const double *lo2 = model->getColLower(), *hi2 = model->getColUpper();
-          int nc = model->getNumCols();
-          for (int k = 0; k < nc; k++) {
-            if (lo2[k] >= hi2[k] - 1e-10) {
-              wsb->setStructStatus(k, CoinWarmStartBasis::atLowerBound);
+          if (mipsterLogPostprocess())
+            fprintf(stderr, "MIPSTER_POST pass %d warm-start size=%dx%d model=%dx%d\n",
+              iPass, wsb->getNumArtificial(), wsb->getNumStructural(), nr, nc);
+          if (wsb->getNumStructural() == nc && wsb->getNumArtificial() == nr) {
+            const double *lo2 = model->getColLower(), *hi2 = model->getColUpper();
+            for (int k = 0; k < nc; k++) {
+              if (lo2[k] >= hi2[k] - 1e-10)
+                wsb->setStructStatus(k, CoinWarmStartBasis::atLowerBound);
+            }
+            model->setWarmStart(wsb);
+            if (mipsterLogPostprocess())
+              fprintf(stderr, "MIPSTER_POST pass %d repaired compatible warm start\n", iPass);
+          } else {
+            CoinWarmStartBasis *empty = dynamic_cast< CoinWarmStartBasis * >(model->getEmptyWarmStart());
+            if (empty) {
+              model->setWarmStart(empty);
+              if (mipsterLogPostprocess())
+                fprintf(stderr, "MIPSTER_POST pass %d replaced incompatible warm start with empty basis\n", iPass);
+              delete empty;
             }
           }
-          model->setWarmStart(wsb);
           delete wsb;
         }
       }
@@ -6049,6 +6140,9 @@ void CglPreProcess::postProcess(OsiSolverInterface &modelIn, int deleteStuff)
       }
 #endif
       {
+        if (mipsterLogPostprocess())
+          fprintf(stderr, "MIPSTER_POST pass %d before initialSolve model=%dx%d\n",
+            iPass, model->getNumRows(), model->getNumCols());
         int numberFixed = 0;
         int numberColumns = model->getNumCols();
         const double *columnLower = model->getColLower();
@@ -6099,6 +6193,11 @@ void CglPreProcess::postProcess(OsiSolverInterface &modelIn, int deleteStuff)
           nameMps, __FILE__, __LINE__);
 #endif
       }
+      if (mipsterLogPostprocess()) {
+        fprintf(stderr, "MIPSTER_POST pass %d after initialSolve provenOpt=%d provenInf=%d obj=%g\n",
+          iPass, model->isProvenOptimal(), model->isProvenPrimalInfeasible(),
+          model->getObjValue() * model->getObjSenseInCbc());
+      }
       const int *originalColumns = presolve_[iPass]->originalColumns();
       const double *columnLower = modelM->getColLower();
       const double *columnUpper = modelM->getColUpper();
@@ -6117,6 +6216,8 @@ void CglPreProcess::postProcess(OsiSolverInterface &modelIn, int deleteStuff)
 	 Could move inside OsiPresolve but some people might object */
       CoinWarmStartBasis *presolvedBasis = dynamic_cast< CoinWarmStartBasis * >(model->getWarmStart());
       assert(presolvedBasis);
+      if (mipsterLogPostprocess())
+        fprintf(stderr, "MIPSTER_POST pass %d got warm start; cleaning statuses\n", iPass);
       int numberChanged = 0;
       for (iColumn = 0; iColumn < numberColumns; iColumn++) {
         int jColumn = originalColumns[iColumn];

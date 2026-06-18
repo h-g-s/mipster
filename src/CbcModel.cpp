@@ -75,6 +75,7 @@ extern int gomory_try;
 #include "CbcStatistics.hpp"
 #include "CbcStrategy.hpp"
 #include "CbcTreeLocal.hpp"
+#include "CoinFinite.hpp"
 #include "CoinHelperFunctions.hpp"
 #include "CoinPackedMatrix.hpp"
 #include "CoinWarmStartBasis.hpp"
@@ -3416,6 +3417,8 @@ void CbcModel::branchAndBound(int doStatistics)
         if (feasible) {
           feasible = solveWithCuts(cuts, maximumCutPassesAtRoot_, NULL);
         }
+        if (feasible)
+          tryCutEnrichedRestartAfterRoot();
         if (multipleRootTries_ && (moreSpecialOptions_ & 134217728) != 0) {
           FILE *fp = NULL;
           size_t nRead;
@@ -6185,6 +6188,7 @@ CbcModel::CbcModel()
   , lastHeuristic_(NULL)
   , fastNodeDepth_(-1)
   , nodeBoundProp_(0)
+  , cutRestart_(0)
   , nodeBoundPropMaxDepth_(50)
   , nodeBoundPropMinDepth_(5)
   , nodeBoundPropDepthInterval_(5)
@@ -6373,6 +6377,7 @@ CbcModel::CbcModel(const OsiSolverInterface &rhs)
   , lastHeuristic_(NULL)
   , fastNodeDepth_(-1)
   , nodeBoundProp_(0)
+  , cutRestart_(0)
   , nodeBoundPropMaxDepth_(50)
   , nodeBoundPropMinDepth_(5)
   , nodeBoundPropDepthInterval_(5)
@@ -6711,6 +6716,7 @@ CbcModel::CbcModel(const CbcModel &rhs, bool cloneHandler)
   , lastSecPrintProgress_(rhs.lastSecPrintProgress_)
   , fastNodeDepth_(rhs.fastNodeDepth_)
   , nodeBoundProp_(rhs.nodeBoundProp_)
+  , cutRestart_(rhs.cutRestart_)
   , nodeBoundPropMaxDepth_(rhs.nodeBoundPropMaxDepth_)
   , nodeBoundPropMinDepth_(rhs.nodeBoundPropMinDepth_)
   , nodeBoundPropDepthInterval_(rhs.nodeBoundPropDepthInterval_)
@@ -7223,6 +7229,7 @@ CbcModel &CbcModel::operator=(const CbcModel &rhs)
     }
     fastNodeDepth_ = rhs.fastNodeDepth_;
     nodeBoundProp_ = rhs.nodeBoundProp_;
+    cutRestart_ = rhs.cutRestart_;
     nodeBoundPropMaxDepth_ = rhs.nodeBoundPropMaxDepth_;
     nodeBoundPropMinDepth_ = rhs.nodeBoundPropMinDepth_;
     nodeBoundPropDepthInterval_ = rhs.nodeBoundPropDepthInterval_;
@@ -7608,6 +7615,7 @@ void CbcModel::gutsOfCopy(const CbcModel &rhs, int mode)
   if (fastNodeDepth_ >= 1000000 && fastNodeDepth_ < 1001000)
     fastNodeDepth_ -= 1000000;
   nodeBoundProp_ = rhs.nodeBoundProp_;
+  cutRestart_ = rhs.cutRestart_;
   nodeBoundPropMaxDepth_ = rhs.nodeBoundPropMaxDepth_;
   nodeBoundPropMinDepth_ = rhs.nodeBoundPropMinDepth_;
   nodeBoundPropDepthInterval_ = rhs.nodeBoundPropDepthInterval_;
@@ -8488,6 +8496,194 @@ void CbcModel::resizeWhichGenerator(int numberNow, int numberAfter)
     memset(whichGenerator_ + numberNow, 0,
       (maximumWhich_ - numberNow) * sizeof(int));
   }
+}
+
+int CbcModel::tryCutEnrichedRestartAfterRoot()
+{
+  if (!cutRestart_ || parentModel_ || !solver_ || !continuousSolver_ || numberIntegers_ <= 0)
+    return 0;
+
+  const int numberColumns = solver_->getNumCols();
+  if (continuousSolver_->getNumCols() != numberColumns)
+    return 0;
+
+  const int originalRows = continuousSolver_->getNumRows();
+  const int rootRows = solver_->getNumRows();
+  const int addedRows = std::max(0, rootRows - originalRows);
+
+  const double *baseLower = continuousSolver_->getColLower();
+  const double *baseUpper = continuousSolver_->getColUpper();
+  const double *rootLower = solver_->getColLower();
+  const double *rootUpper = solver_->getColUpper();
+  const double integerTolerance = getIntegerTolerance();
+  const double boundTolerance = std::max(1.0e-8, integerTolerance);
+
+  int baseFixedIntegers = 0;
+  int rootFixedIntegers = 0;
+  int newlyFixedIntegers = 0;
+  int newlyTightenedIntegers = 0;
+  for (int i = 0; i < numberIntegers_; i++) {
+    const int iColumn = integerVariable_[i];
+    const bool baseFixed = baseUpper[iColumn] - baseLower[iColumn] <= integerTolerance;
+    const bool rootFixed = rootUpper[iColumn] - rootLower[iColumn] <= integerTolerance;
+    if (baseFixed)
+      baseFixedIntegers++;
+    if (rootFixed)
+      rootFixedIntegers++;
+    if (rootFixed && !baseFixed)
+      newlyFixedIntegers++;
+    if (!baseFixed && (rootLower[iColumn] > baseLower[iColumn] + boundTolerance || rootUpper[iColumn] < baseUpper[iColumn] - boundTolerance))
+      newlyTightenedIntegers++;
+  }
+
+  if (cutRestart_ == 1) {
+    const int minFixed = std::min(50, std::max(1, numberIntegers_ / 20));
+    const bool enoughFixing = newlyFixedIntegers >= minFixed || 20 * newlyFixedIntegers >= numberIntegers_;
+    if (!enoughFixing)
+      return 0;
+  } else if (cutRestart_ < 0 || cutRestart_ > 2) {
+    return 0;
+  }
+
+  {
+    char printBuffer[256];
+    sprintf(printBuffer,
+      "Cut restart: %d added rows, %d newly fixed integer columns "
+      "(%d tightened, %d/%d fixed before, %d/%d fixed now)",
+      addedRows, newlyFixedIntegers, newlyTightenedIntegers,
+      baseFixedIntegers, numberIntegers_, rootFixedIntegers, numberIntegers_);
+    messageHandler()->message(CBC_GENERAL, messages())
+      << printBuffer << CoinMessageEol;
+  }
+
+  {
+    const OsiRowCutDebugger *debugger = solver_->getRowCutDebugger();
+    const double *optSol = debugger
+      ? debugger->optimalSolution()
+      : (!solver_->getRowCutDebuggerAlways() && debugSolution
+            && debugNumberColumns == numberColumns
+          ? debugSolution : NULL);
+    if (optSol) {
+      for (int i = 0; i < numberIntegers_; i++) {
+        const int iColumn = integerVariable_[i];
+        const double value = optSol[iColumn];
+        if (rootLower[iColumn] > value + 0.5 || rootUpper[iColumn] < value - 0.5) {
+          printf("cutRestart BAD FIXING: col %d (%s) bounds=[%g,%g] "
+                 "but optimal has %g\n",
+            iColumn, solver_->getColName(iColumn).c_str(),
+            rootLower[iColumn], rootUpper[iColumn], value);
+        }
+      }
+    }
+  }
+
+  OsiSolverInterface *restartSolver = solver_->clone();
+  double *newSolution = new double[numberColumns];
+  double objectiveValue = getCutoff();
+  CbcSerendipity heuristic(*this);
+  heuristic.setHeuristicName("cut restart");
+  if (bestSolution_)
+    heuristic.setInputSolution(bestSolution_, bestObjective_);
+  heuristic.setFractionSmall(100.0);
+  heuristic.setFeasibilityPumpOptions(1008013);
+  heuristic.setNumberNodes(originalRows);
+
+  const int returnCode = heuristic.smallBranchAndBound(
+    restartSolver, -1, newSolution, objectiveValue, getCutoff(),
+    "CutRestart");
+  delete restartSolver;
+
+  if (returnCode < 0) {
+    char printBuffer[160];
+    sprintf(printBuffer, "Cut restart skipped by sub-search (code %d)",
+      returnCode);
+    messageHandler()->message(CBC_GENERAL, messages())
+      << printBuffer << CoinMessageEol;
+    delete[] newSolution;
+    return returnCode;
+  }
+
+  int acceptedSolution = 0;
+  if ((returnCode & 1) != 0) {
+    bool validSolution = CoinFinite(objectiveValue);
+    int badColumn = -1;
+    int badRow = -1;
+    double largestViolation = 0.0;
+
+    for (int i = 0; validSolution && i < numberColumns; i++) {
+      const double value = newSolution[i];
+      if (!CoinFinite(value)) {
+        validSolution = false;
+        badColumn = i;
+        break;
+      }
+      if (value < rootLower[i] - 1.0e-5 || value > rootUpper[i] + 1.0e-5) {
+        validSolution = false;
+        badColumn = i;
+        break;
+      }
+    }
+    for (int i = 0; validSolution && i < numberIntegers_; i++) {
+      const int iColumn = integerVariable_[i];
+      const double nearest = floor(newSolution[iColumn] + 0.5);
+      if (fabs(newSolution[iColumn] - nearest) > 10.0 * integerTolerance) {
+        validSolution = false;
+        badColumn = iColumn;
+      }
+    }
+    if (validSolution) {
+      const CoinPackedMatrix *rowCopy = solver_->getMatrixByRow();
+      const int *rowLength = rowCopy->getVectorLengths();
+      const double *elements = rowCopy->getElements();
+      const int *column = rowCopy->getIndices();
+      const CoinBigIndex *rowStart = rowCopy->getVectorStarts();
+      const double *rowLower = solver_->getRowLower();
+      const double *rowUpper = solver_->getRowUpper();
+      for (int iRow = 0; iRow < rootRows; iRow++) {
+        double activity = 0.0;
+        for (CoinBigIndex j = rowStart[iRow]; j < rowStart[iRow] + rowLength[iRow]; j++)
+          activity += elements[j] * newSolution[column[j]];
+        double violation = 0.0;
+        if (activity < rowLower[iRow] - 1.0e-5)
+          violation = rowLower[iRow] - activity;
+        else if (activity > rowUpper[iRow] + 1.0e-5)
+          violation = activity - rowUpper[iRow];
+        if (violation > largestViolation) {
+          largestViolation = violation;
+          badRow = iRow;
+        }
+      }
+      if (largestViolation > 1.0e-5)
+        validSolution = false;
+    }
+
+    if (validSolution) {
+      numberSolutions_++;
+      numberHeuristicSolutions_++;
+      lastHeuristic_ = NULL;
+      setBestSolution(CBC_ROUNDING, objectiveValue, newSolution);
+      acceptedSolution = 1;
+    } else {
+      char printBuffer[256];
+      sprintf(printBuffer,
+        "Cut restart rejected returned solution (bad column %d, bad row %d, "
+        "max row violation %.6g)",
+        badColumn, badRow, largestViolation);
+      messageHandler()->message(CBC_GENERAL, messages())
+        << printBuffer << CoinMessageEol;
+    }
+  }
+
+  {
+    char printBuffer[160];
+    sprintf(printBuffer, "Cut restart sub-search returned code %d%s",
+      returnCode, acceptedSolution ? " and imported an incumbent" : "");
+    messageHandler()->message(CBC_GENERAL, messages())
+      << printBuffer << CoinMessageEol;
+  }
+
+  delete[] newSolution;
+  return acceptedSolution;
 }
 
 /** Solve the model using cuts
