@@ -6122,6 +6122,7 @@ CbcModel::CbcModel()
   , whenCuts_(-1)
   , cutRankingMetric_(0)
   , cutPoolFilter_(1)
+  , globalCutMinViolation_(0.005)
   , hotstartSolution_(NULL)
   , hotstartPriorities_(NULL)
   , numberHeuristicSolutions_(0)
@@ -6319,6 +6320,7 @@ CbcModel::CbcModel(const OsiSolverInterface &rhs)
   , hotstartSolution_(NULL)
   , cutPoolFilter_(1)
   , hotstartPriorities_(NULL)
+  , globalCutMinViolation_(0.005)
   , numberHeuristicSolutions_(0)
   , numberNodes_(0)
   , lastNodeImprovingFeasSol_(-1)
@@ -6683,6 +6685,7 @@ CbcModel::CbcModel(const CbcModel &rhs, bool cloneHandler)
   , whenCuts_(rhs.whenCuts_)
   , cutRankingMetric_(rhs.cutRankingMetric_)
   , cutPoolFilter_(rhs.cutPoolFilter_)
+  , globalCutMinViolation_(rhs.globalCutMinViolation_)
   , numberHeuristicSolutions_(rhs.numberHeuristicSolutions_)
   , numberNodes_(rhs.numberNodes_)
   , lastNodeImprovingFeasSol_(rhs.lastNodeImprovingFeasSol_)
@@ -7087,6 +7090,7 @@ CbcModel &CbcModel::operator=(const CbcModel &rhs)
     whenCuts_ = rhs.whenCuts_;
     cutRankingMetric_ = rhs.cutRankingMetric_;
     cutPoolFilter_ = rhs.cutPoolFilter_;
+    globalCutMinViolation_ = rhs.globalCutMinViolation_;
     numberHeuristicSolutions_ = rhs.numberHeuristicSolutions_;
     numberNodes_ = rhs.numberNodes_;
     lastNodeImprovingFeasSol_ = rhs.lastNodeImprovingFeasSol_;
@@ -7700,8 +7704,8 @@ void CbcModel::gutsOfCopy(const CbcModel &rhs, int mode)
   whenCuts_ = rhs.whenCuts_;
   cutRankingMetric_ = rhs.cutRankingMetric_;
   cutPoolFilter_ = rhs.cutPoolFilter_;
+  globalCutMinViolation_ = rhs.globalCutMinViolation_;
 #ifdef CBC_PROBE_10
-  delete reinterpret_cast< depth10 * >(depth10Probing_);
   depth10Probing_ = NULL;
 #endif
   synchronizeModel();
@@ -9351,7 +9355,7 @@ bool CbcModel::solveWithCuts(OsiCuts &cuts, int numberTries, CbcNode *node)
             // else
             // printf("already done??\n");
           }
-          if (violation > 0.005) {
+          if (violation > globalCutMinViolation_) {
             // Score for ranking: higher = better (negated for ascending sort).
             // With fitness metric, use CoinCutPool formula; else raw violation.
             double score;
