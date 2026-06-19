@@ -44,6 +44,7 @@ RUN_EXP="$SCRIPT_DIR/run_experiments.sh"
 BIN="${MIPSTER_PREFIX:-$HOME/prog/cbc}/bin/mipster"
 TIMELIMIT=300
 PARALLEL=$(nproc)
+OVERTIME_GRACE=600
 INSTANCES="${MIPSTER_INSTANCES:-$HOME/inst}/miplib/2017+spp"
 DATE=$(date +%Y_%m_%d)
 OUTDIR="${MIPSTER_EXPERIMENTS:-$HOME/experiments/cbc}/parity_pathaggr_${DATE}"
@@ -52,12 +53,13 @@ DRY_RUN=0
 # ── Argument parsing ───────────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --bin)       BIN="$2";       shift 2 ;;
-    --timelimit) TIMELIMIT="$2"; shift 2 ;;
-    --parallel)  PARALLEL="$2";  shift 2 ;;
-    --instances) INSTANCES="$2"; shift 2 ;;
-    --outdir)    OUTDIR="$2";    shift 2 ;;
-    --dry-run)   DRY_RUN=1;      shift   ;;
+    --bin)            BIN="$2";            shift 2 ;;
+    --timelimit)      TIMELIMIT="$2";      shift 2 ;;
+    --parallel)       PARALLEL="$2";       shift 2 ;;
+    --overtime-grace) OVERTIME_GRACE="$2"; shift 2 ;;
+    --instances)      INSTANCES="$2";      shift 2 ;;
+    --outdir)         OUTDIR="$2";         shift 2 ;;
+    --dry-run)        DRY_RUN=1;           shift   ;;
     *) echo "Unknown option: $1" >&2; exit 1 ;;
   esac
 done
@@ -78,12 +80,12 @@ mkdir -p "$OUTDIR"
 
 echo "════════════════════════════════════════════════════════════════"
 echo "  Parity + PathAggr ablation study"
-echo "  Binary:     $BIN"
-echo "  Instances:  $INSTANCES"
-echo "  Timelimit:  ${TIMELIMIT}s"
-echo "  Parallel:   $PARALLEL concurrent instances per condition"
-echo "  Output:     $OUTDIR"
-echo "  Dry-run:    $DRY_RUN"
+echo "  Binary:         $BIN"
+echo "  Instances:      $INSTANCES"
+echo "  Timelimit:      ${TIMELIMIT}s  (+${OVERTIME_GRACE}s overtime grace)"
+echo "  Parallel:       $PARALLEL concurrent instances per condition"
+echo "  Output:         $OUTDIR"
+echo "  Dry-run:        $DRY_RUN"
 echo "════════════════════════════════════════════════════════════════"
 echo ""
 
@@ -141,7 +143,9 @@ for entry in "${CONDITIONS[@]}"; do
     bash "$RUN_EXP"
     --bin "$BIN"
     --timelimit "$TIMELIMIT"
+    --overtime-grace "$OVERTIME_GRACE"
     --parallel "$PARALLEL"
+    --threads 1
     --instances "$INSTANCES"
     --outdir "$CDIR"
     "${OPTS_ARGS[@]}"
