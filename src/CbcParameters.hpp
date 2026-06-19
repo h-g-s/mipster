@@ -476,6 +476,12 @@ public:
     return parameters_[CbcParam::CUTPOOLFILTER]->modeVal() != 0;
   }
 
+  /*! \brief Get the global-pool cut minimum violation threshold */
+  inline double getGlobalCutMinViolation() const
+  {
+    return parameters_[CbcParam::GLOBALCUTMINVIOLATION]->dblVal();
+  }
+
   /*! \brief Codes to specify the assignment of branching priorities
 
       - BPOff: no priorities are passed to cbc

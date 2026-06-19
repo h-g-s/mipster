@@ -717,6 +717,7 @@ void CbcParameters::addCbcParams() {
   parameters_[CbcParam::RACINGLP]->setTopic("Parallelism");
   parameters_[CbcParam::CUTRANKINGMETRIC]->setTopic("Cuts");
   parameters_[CbcParam::CUTPOOLFILTER]->setTopic("Cuts");
+  parameters_[CbcParam::GLOBALCUTMINVIOLATION]->setTopic("Cuts");
 
   // Integer params — ZeroHalf tuning (sub-topic of Cuts)
   for (int code : {CbcParam::ZEROHALFROWMAXFRACTIONALCOUNT,
@@ -838,6 +839,7 @@ void CbcParameters::setDefaults(int strategy) {
      parameters_[CbcParam::SMALLBAB]->setDefault(0.5);
      parameters_[CbcParam::TIGHTENFACTOR]->setDefault(0.0);
      parameters_[CbcParam::RINSCLOSEMAXDIST]->setDefault(0.4);
+     parameters_[CbcParam::GLOBALCUTMINVIOLATION]->setDefault(0.005);
      parameters_[CbcParam::LPTIMEFREQ]->setDefault(5.0);
      parameters_[CbcParam::FPUMPTIMEFREQ]->setDefault(5.0);
      parameters_[CbcParam::AGGREGATEMIXED]->setDefault(1);
@@ -2123,6 +2125,25 @@ void CbcParameters::addCbcSolverDblParams() {
       "fixed (closest first) until the threshold is satisfied. A value of "
       "0.0 disables the fallback. Default: 0.4. Typical useful values: 0.2-0.5.",
       CoinParam::displayPriorityLow);
+
+  parameters_[CbcParam::GLOBALCUTMINVIOLATION]->setup(
+      "globalCutMin!Violation",
+      "Minimum LP violation for a global cut to be re-injected",
+      0.0, 1.0,
+      "At the start of each cut-generation pass, MIPster scans the global "
+      "cut pool and re-injects any cut whose violation against the current LP "
+      "solution exceeds this threshold.\n"
+      "\n"
+      "Lower values let more cuts back in (potentially tightening the bound "
+      "faster at the cost of a larger LP); higher values are more selective "
+      "(fewer rows added per pass, faster LP solves but possibly slower "
+      "convergence).\n"
+      "\n"
+      "Default: 0.005 (the original hard-coded value, a conservative ~50x "
+      "multiple of the LP primal tolerance ~1e-7).\n"
+      "Tighter values (e.g. 1e-3) can help when the tree is large and global "
+      "cuts from early root passes are almost-satisfied.",
+      CoinParam::displayPriorityHigh);
 
   parameters_[CbcParam::LPTIMEFREQ]->setup(
       "lpTimeFreq", "Print LP progress every N seconds (0 = disabled).",

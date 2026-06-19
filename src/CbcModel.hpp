@@ -983,6 +983,10 @@ public:
   inline int cutPoolFilter() const { return cutPoolFilter_; }
   /// Set cut pool filter flag
   inline void setCutPoolFilter(int value) { cutPoolFilter_ = value; }
+  /// Get global-pool cut minimum violation threshold (default 0.005)
+  inline double globalCutMinViolation() const { return globalCutMinViolation_; }
+  /// Set global-pool cut minimum violation threshold
+  inline void setGlobalCutMinViolation(double value) { globalCutMinViolation_ = value; }
   /** Return true if we want to do cuts
         If allowForTopOfTree zero then just does on multiples of depth
         if 1 then allows for doing at top of tree
@@ -3080,6 +3084,8 @@ private:
   int cutRankingMetric_;
   /// Cut pool filter: 1 = pre-filter round cuts via best-per-variable criterion, 0 = off
   int cutPoolFilter_;
+  /// Minimum LP violation for a global cut to be re-injected (default 0.005)
+  double globalCutMinViolation_;
   /// Hotstart solution
   double *hotstartSolution_;
   /// Hotstart priorities
