@@ -100,6 +100,7 @@ extern int gomory_try;
 
 #include "CoinMpsIO.hpp"
 #include "CoinTime.hpp"
+#include "CoinCutPool.hpp"
 
 // Reference solution loaded by -debugCuts; used to check for bad fixings
 // even before the OsiRowCutDebugger is activated.
@@ -6119,6 +6120,7 @@ CbcModel::CbcModel()
   , maximumSavedSolutions_(0)
   , stateOfSearch_(0)
   , whenCuts_(-1)
+  , cutRankingMetric_(0)
   , hotstartSolution_(NULL)
   , hotstartPriorities_(NULL)
   , numberHeuristicSolutions_(0)
@@ -6312,6 +6314,7 @@ CbcModel::CbcModel(const OsiSolverInterface &rhs)
   , maximumSavedSolutions_(0)
   , stateOfSearch_(0)
   , whenCuts_(-1)
+  , cutRankingMetric_(0)
   , hotstartSolution_(NULL)
   , hotstartPriorities_(NULL)
   , numberHeuristicSolutions_(0)
@@ -6676,6 +6679,7 @@ CbcModel::CbcModel(const CbcModel &rhs, bool cloneHandler)
   , maximumSavedSolutions_(rhs.maximumSavedSolutions_)
   , stateOfSearch_(rhs.stateOfSearch_)
   , whenCuts_(rhs.whenCuts_)
+  , cutRankingMetric_(rhs.cutRankingMetric_)
   , numberHeuristicSolutions_(rhs.numberHeuristicSolutions_)
   , numberNodes_(rhs.numberNodes_)
   , lastNodeImprovingFeasSol_(rhs.lastNodeImprovingFeasSol_)
@@ -7078,6 +7082,7 @@ CbcModel &CbcModel::operator=(const CbcModel &rhs)
     numberSolutions_ = rhs.numberSolutions_;
     stateOfSearch_ = rhs.stateOfSearch_;
     whenCuts_ = rhs.whenCuts_;
+    cutRankingMetric_ = rhs.cutRankingMetric_;
     numberHeuristicSolutions_ = rhs.numberHeuristicSolutions_;
     numberNodes_ = rhs.numberNodes_;
     lastNodeImprovingFeasSol_ = rhs.lastNodeImprovingFeasSol_;
@@ -7689,6 +7694,7 @@ void CbcModel::gutsOfCopy(const CbcModel &rhs, int mode)
     ? new CbcBranchingRanker(*rhs.branchingRanker_) : NULL;
   messageHandler()->setLogLevel(rhs.messageHandler()->logLevel());
   whenCuts_ = rhs.whenCuts_;
+  cutRankingMetric_ = rhs.cutRankingMetric_;
 #ifdef CBC_PROBE_10
   delete reinterpret_cast< depth10 * >(depth10Probing_);
   depth10Probing_ = NULL;
@@ -9264,7 +9270,20 @@ bool CbcModel::solveWithCuts(OsiCuts &cuts, int numberTries, CbcNode *node)
             // printf("already done??\n");
           }
           if (violation > 0.005) {
-            violations[numberPossible] = -violation;
+            // Score for ranking: higher = better (negated for ascending sort).
+            // With fitness metric, use CoinCutPool formula; else raw violation.
+            double score;
+            if (cutRankingMetric_ == 1 && violation != COIN_DBL_MAX) {
+              const CoinPackedVector &row = thisCut->row();
+              score = CoinCutPool::rowCutFitness(row.getIndices(),
+                                                  row.getElements(),
+                                                  row.getNumElements(),
+                                                  thisCut->ub(),
+                                                  cbcColSolution_);
+            } else {
+              score = violation;
+            }
+            violations[numberPossible] = -score;
             which[numberPossible++] = i;
           }
         }
@@ -10158,10 +10177,19 @@ bool CbcModel::solveWithCuts(OsiCuts &cuts, int numberTries, CbcNode *node)
             const double *sol = solver_->getColSolution();
             for (int i = 0; i < nTotal; i++) {
               const OsiRowCut &c = cuts.rowCut(i);
-              double lhs = 0.0;
-              for (int k = 0; k < c.row().getNumElements(); k++)
-                lhs += c.row().getElements()[k] * sol[c.row().getIndices()[k]];
-              scored[i] = {(lhs - c.ub()) / c.row().getNumElements(), i};
+              double score;
+              if (cutRankingMetric_ == 1) {
+                score = CoinCutPool::rowCutFitness(c.row().getIndices(),
+                                                    c.row().getElements(),
+                                                    c.row().getNumElements(),
+                                                    c.ub(), sol);
+              } else {
+                double lhs = 0.0;
+                for (int k = 0; k < c.row().getNumElements(); k++)
+                  lhs += c.row().getElements()[k] * sol[c.row().getIndices()[k]];
+                score = (lhs - c.ub()) / c.row().getNumElements();
+              }
+              scored[i] = {score, i};
             }
             std::sort(scored.begin(), scored.end(), [](const std::pair<double,int> &a, const std::pair<double,int> &b) { return a.first > b.first; });
             nAdded = std::min(nTotal, maxCuts);
@@ -17009,10 +17037,19 @@ void CbcModel::doHeuristicsAtRoot(int deleteHeuristicsAfterwards)
           const double *sol = solver_->getColSolution();
           for (int i = 0; i < nTotal; i++) {
             const OsiRowCut &c = cuts.rowCut(i);
-            double lhs = 0.0;
-            for (int k = 0; k < c.row().getNumElements(); k++)
-              lhs += c.row().getElements()[k] * sol[c.row().getIndices()[k]];
-            scored[i] = {(lhs - c.ub()) / c.row().getNumElements(), i};
+            double score;
+            if (cutRankingMetric_ == 1) {
+              score = CoinCutPool::rowCutFitness(c.row().getIndices(),
+                                                  c.row().getElements(),
+                                                  c.row().getNumElements(),
+                                                  c.ub(), sol);
+            } else {
+              double lhs = 0.0;
+              for (int k = 0; k < c.row().getNumElements(); k++)
+                lhs += c.row().getElements()[k] * sol[c.row().getIndices()[k]];
+              score = (lhs - c.ub()) / c.row().getNumElements();
+            }
+            scored[i] = {score, i};
           }
           std::sort(scored.begin(), scored.end(), [](const std::pair<double,int> &a, const std::pair<double,int> &b) { return a.first > b.first; });
           nAdded = std::min(nTotal, maxCuts);

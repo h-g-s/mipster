@@ -254,6 +254,33 @@ double CoinCutPool::calculateFitness(const CoinCut *cut) const {
     return ((violation / ((double) activeCols)) * 100000.0) + ((1.0 / (diffOfCoefs + 1.0)) * 1000.0);
 }
 
+double CoinCutPool::rowCutFitness(const int *idxs, const double *coefs,
+                                   int nz, double rhs, const double *x)
+{
+    double lhs = 0.0;
+    double minCoef = coefs[0], maxCoef = coefs[0];
+    size_t activeCols = 0;
+
+    for (int i = 0; i < nz; i++) {
+        if (fabs(x[idxs[i]]) >= CUTPOOL_EPS) {
+            lhs += coefs[i] * x[idxs[i]];
+            activeCols++;
+            minCoef = std::min(minCoef, coefs[i]);
+            maxCoef = std::max(maxCoef, coefs[i]);
+        }
+    }
+
+    const double diffOfCoefs =
+        fabs(maxCoef - minCoef) + fabs(maxCoef - rhs) + fabs(minCoef - rhs);
+    const double violation = lhs - rhs;
+
+    if (activeCols == 0)
+        return (1.0 / (diffOfCoefs + 1.0)) * 1000.0;
+
+    return (violation / static_cast<double>(activeCols)) * 100000.0
+         + (1.0 / (diffOfCoefs + 1.0)) * 1000.0;
+}
+
 void CoinCutPool::checkMemory() {
     if (nCuts_ + 1 <= cutsCap_) {
         return;
