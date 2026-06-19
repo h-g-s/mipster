@@ -10210,6 +10210,9 @@ int CbcSolver::run(std::deque< std::string > inputQueue,
           } else if (cutPass != -1234567) {
             babModel_->setMaximumCutPassesAtRoot(cutPass);
           }
+          // Apply cut ranking metric
+          babModel_->setCutRankingMetric(
+            parameters.getCutRankingMetric() == CbcParameters::CutRankingFitness ? 1 : 0);
           // Do more strong branching if small
           // if (babModel_->getNumCols()<5000)
           // babModel_->setNumberStrong(20);

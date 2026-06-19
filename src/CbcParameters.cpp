@@ -715,6 +715,7 @@ void CbcParameters::addCbcParams() {
   parameters_[CbcParam::MAXSAVEDSOLS]->setTopic("Solving");
   parameters_[CbcParam::THREADS]->setTopic("Parallelism");
   parameters_[CbcParam::RACINGLP]->setTopic("Parallelism");
+  parameters_[CbcParam::CUTRANKINGMETRIC]->setTopic("Cuts");
 
   // Integer params — ZeroHalf tuning (sub-topic of Cuts)
   for (int code : {CbcParam::ZEROHALFROWMAXFRACTIONALCOUNT,
@@ -814,6 +815,7 @@ void CbcParameters::setDefaults(int strategy) {
      parameters_[CbcParam::PRELARGEFEASTOL]->setDefault("off");
      parameters_[CbcParam::PREPROBINGBEFORECLIQUES]->setDefault("off");
      parameters_[CbcParam::RACINGLP]->setDefault("off");
+     parameters_[CbcParam::CUTRANKINGMETRIC]->setDefault("violation");
      parameters_[CbcParam::SOSPRIORITIZE]->setDefault("off");
      parameters_[CbcParam::STRATEGY]->setDefault("default");
      parameters_[CbcParam::USECGRAPH]->setDefault("on");
@@ -1994,6 +1996,26 @@ void CbcParameters::addCbcSolverKwdParams() {
       CoinParam::displayPriorityHigh);
   parameters_[CbcParam::RACINGLP]->appendKwd("off", CbcParameters::ParamOff);
   parameters_[CbcParam::RACINGLP]->appendKwd("on", CbcParameters::ParamOn);
+
+  parameters_[CbcParam::CUTRANKINGMETRIC]->setup(
+      "cutRanking!Metric",
+      "Metric used to rank cuts when selecting from a pool",
+      "Controls how cuts are ordered when too many are available and a budget "
+      "or cap limits how many can be applied.\n"
+      "  violation: rank by LP violation (default; fast, well understood).\n"
+      "  fitness:   rank by the CoinCutPool fitness score:\n"
+      "             (viol / activeCols) * 1e5 + (1 / (coefSpread + 1)) * 1e3\n"
+      "             where activeCols = variables with |x*| > 1e-8, and\n"
+      "             coefSpread = |maxCoef-minCoef| + |maxCoef-rhs| + |minCoef-rhs|.\n"
+      "             Favours sparse, numerically balanced cuts.\n"
+      "Affects three sites: the global-pool re-scan at the start of each "
+      "solveWithCuts pass, and the two dive-conflict-cut selection sites "
+      "(in-tree and at-root).",
+      CoinParam::displayPriorityHigh);
+  parameters_[CbcParam::CUTRANKINGMETRIC]->appendKwd(
+      "violation", CbcParameters::CutRankingViolation);
+  parameters_[CbcParam::CUTRANKINGMETRIC]->appendKwd(
+      "fitness", CbcParameters::CutRankingFitness);
 
   parameters_[CbcParam::NODEBOUNDPROP]->setup(
     "nodeBoundP!rop",

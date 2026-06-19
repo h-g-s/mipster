@@ -218,6 +218,7 @@ public:
       LPMETHOD,
       NODEBOUNDPROP,
       RACINGLP,
+      CUTRANKINGMETRIC,
       LASTKWDPARAM,
 
       // Integer Parameters

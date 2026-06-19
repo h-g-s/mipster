@@ -451,6 +451,25 @@ public:
 
   enum OnOffMode { ParamOff = 0, ParamOn, ParamEndMarker };
 
+  /*! \brief Metric used to rank cuts when selecting from a pool
+
+      - CutRankingViolation: rank by LP violation (default, original behaviour)
+      - CutRankingFitness:   rank by CoinCutPool fitness = (viol/activeCols)*1e5
+                             + (1/(coefSpread+1))*1e3
+    */
+  enum CutRankingMode {
+    CutRankingViolation = 0,
+    CutRankingFitness,
+    CutRankingEndMarker
+  };
+
+  /*! \brief Get the cut ranking metric */
+  inline CutRankingMode getCutRankingMetric() const
+  {
+    return static_cast<CutRankingMode>(
+      parameters_[CbcParam::CUTRANKINGMETRIC]->modeVal());
+  }
+
   /*! \brief Codes to specify the assignment of branching priorities
 
       - BPOff: no priorities are passed to cbc

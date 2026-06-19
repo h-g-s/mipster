@@ -170,6 +170,30 @@ public:
    **/
   void removeNullCuts();
 
+  /**
+   * Compute the fitness score for an OsiRowCut against an LP solution.
+   *
+   * The formula is:
+   *   fit = (viol / activeCols) * 1e5  +  (1 / (diffOfCoefs + 1)) * 1e3
+   *
+   * where:
+   *   viol       = lhs(x) - rhs  (must be > 0 to be meaningful)
+   *   activeCols = number of cut variables with |x[j]| > 1e-8
+   *   diffOfCoefs = |maxCoef - minCoef| + |maxCoef - rhs| + |minCoef - rhs|
+   *
+   * If activeCols == 0 the first term degenerates; in that case only the
+   * second term (numerical balance) is returned.
+   *
+   * @param idxs     column indices of the cut
+   * @param coefs    coefficients of the cut
+   * @param nz       number of nonzeros
+   * @param rhs      right-hand-side of the cut (cut is idxs·coefs <= rhs)
+   * @param x        current LP solution (size >= max(idxs)+1)
+   * @return fitness score (higher = better)
+   **/
+  static double rowCutFitness(const int *idxs, const double *coefs,
+                               int nz, double rhs, const double *x);
+
 private:
   /**
    * Compute the number of variables for which the
