@@ -10213,6 +10213,8 @@ int CbcSolver::run(std::deque< std::string > inputQueue,
           // Apply cut ranking metric
           babModel_->setCutRankingMetric(
             parameters.getCutRankingMetric() == CbcParameters::CutRankingFitness ? 1 : 0);
+          // Apply cut pool filter
+          babModel_->setCutPoolFilter(parameters.getCutPoolFilter() ? 1 : 0);
           // Do more strong branching if small
           // if (babModel_->getNumCols()<5000)
           // babModel_->setNumberStrong(20);

@@ -6121,6 +6121,7 @@ CbcModel::CbcModel()
   , stateOfSearch_(0)
   , whenCuts_(-1)
   , cutRankingMetric_(0)
+  , cutPoolFilter_(1)
   , hotstartSolution_(NULL)
   , hotstartPriorities_(NULL)
   , numberHeuristicSolutions_(0)
@@ -6316,6 +6317,7 @@ CbcModel::CbcModel(const OsiSolverInterface &rhs)
   , whenCuts_(-1)
   , cutRankingMetric_(0)
   , hotstartSolution_(NULL)
+  , cutPoolFilter_(1)
   , hotstartPriorities_(NULL)
   , numberHeuristicSolutions_(0)
   , numberNodes_(0)
@@ -6680,6 +6682,7 @@ CbcModel::CbcModel(const CbcModel &rhs, bool cloneHandler)
   , stateOfSearch_(rhs.stateOfSearch_)
   , whenCuts_(rhs.whenCuts_)
   , cutRankingMetric_(rhs.cutRankingMetric_)
+  , cutPoolFilter_(rhs.cutPoolFilter_)
   , numberHeuristicSolutions_(rhs.numberHeuristicSolutions_)
   , numberNodes_(rhs.numberNodes_)
   , lastNodeImprovingFeasSol_(rhs.lastNodeImprovingFeasSol_)
@@ -7083,6 +7086,7 @@ CbcModel &CbcModel::operator=(const CbcModel &rhs)
     stateOfSearch_ = rhs.stateOfSearch_;
     whenCuts_ = rhs.whenCuts_;
     cutRankingMetric_ = rhs.cutRankingMetric_;
+    cutPoolFilter_ = rhs.cutPoolFilter_;
     numberHeuristicSolutions_ = rhs.numberHeuristicSolutions_;
     numberNodes_ = rhs.numberNodes_;
     lastNodeImprovingFeasSol_ = rhs.lastNodeImprovingFeasSol_;
@@ -7695,6 +7699,7 @@ void CbcModel::gutsOfCopy(const CbcModel &rhs, int mode)
   messageHandler()->setLogLevel(rhs.messageHandler()->logLevel());
   whenCuts_ = rhs.whenCuts_;
   cutRankingMetric_ = rhs.cutRankingMetric_;
+  cutPoolFilter_ = rhs.cutPoolFilter_;
 #ifdef CBC_PROBE_10
   delete reinterpret_cast< depth10 * >(depth10Probing_);
   depth10Probing_ = NULL;
@@ -8506,6 +8511,83 @@ void CbcModel::resizeWhichGenerator(int numberNow, int numberAfter)
   If numberTries == 0 then user did not want any cuts.
 */
 
+/* Filter row cuts in theseCuts by the "best cut per variable" criterion.
+   A cut is kept only if it has the highest fitness score for at least one
+   variable among all cuts in this round.  Column cuts are untouched.
+   If fewer than 2 row cuts are present, this is a no-op.
+
+   fitness = (viol/activeCols)*1e5 + (1/(coefSpread+1))*1e3
+   (see CoinCutPool::rowCutFitness). */
+static void filterCutsByBestPerVar(OsiCuts &theseCuts,
+  const double *x, int numCols)
+{
+  int nRow = theseCuts.sizeRowCuts();
+  if (nRow < 2)
+    return;
+
+  // Compute fitness for each row cut.
+  std::vector<double> fitness(nRow);
+  for (int i = 0; i < nRow; i++) {
+    const OsiRowCut &rc = theseCuts.rowCut(i);
+    const CoinPackedVector &row = rc.row();
+    const int *idxs = row.getIndices();
+    const double *coefs = row.getElements();
+    int nz = row.getNumElements();
+    if (nz <= 0) {
+      fitness[i] = 1e300; // empty cut — always keep
+    } else if (rc.ub() < 1e30) {
+      fitness[i] = CoinCutPool::rowCutFitness(idxs, coefs, nz, rc.ub(), x);
+    } else if (rc.lb() > -1e30) {
+      // Convert >= to <= by negating.
+      std::vector<double> neg(nz);
+      for (int j = 0; j < nz; j++) neg[j] = -coefs[j];
+      fitness[i] = CoinCutPool::rowCutFitness(idxs, neg.data(), nz, -rc.lb(), x);
+    } else {
+      fitness[i] = 1e300; // range cut or both-sided — always keep
+    }
+  }
+
+  // For each variable, record the index of the highest-fitness cut containing it.
+  std::vector<int> bestCutByCol(numCols, -1);
+  std::vector<double> bestFitByCol(numCols, -1e300);
+  for (int i = 0; i < nRow; i++) {
+    const CoinPackedVector &row = theseCuts.rowCut(i).row();
+    const int *idxs = row.getIndices();
+    int nz = row.getNumElements();
+    for (int j = 0; j < nz; j++) {
+      int col = idxs[j];
+      if (col >= 0 && col < numCols && fitness[i] > bestFitByCol[col]) {
+        bestFitByCol[col] = fitness[i];
+        bestCutByCol[col] = i;
+      }
+    }
+  }
+
+  // A cut survives if it's the best for at least one variable.
+  std::vector<bool> keep(nRow, false);
+  for (int col = 0; col < numCols; col++) {
+    if (bestCutByCol[col] >= 0)
+      keep[bestCutByCol[col]] = true;
+  }
+
+  // Count survivors to decide if any rebuild is needed.
+  int nKeep = 0;
+  for (int i = 0; i < nRow; i++) nKeep += keep[i] ? 1 : 0;
+  if (nKeep == nRow)
+    return; // nothing filtered
+
+  // Rebuild: collect surviving row cuts + all column cuts into a new OsiCuts.
+  OsiCuts filtered;
+  for (int i = 0; i < nRow; i++) {
+    if (keep[i])
+      filtered.insert(theseCuts.rowCut(i));
+  }
+  int nCol = theseCuts.sizeColCuts();
+  for (int i = 0; i < nCol; i++)
+    filtered.insert(theseCuts.colCut(i));
+  theseCuts = filtered;
+}
+
 bool CbcModel::solveWithCuts(OsiCuts &cuts, int numberTries, CbcNode *node)
 /*
   Parameters:
@@ -9275,11 +9357,28 @@ bool CbcModel::solveWithCuts(OsiCuts &cuts, int numberTries, CbcNode *node)
             double score;
             if (cutRankingMetric_ == 1 && violation != COIN_DBL_MAX) {
               const CoinPackedVector &row = thisCut->row();
-              score = CoinCutPool::rowCutFitness(row.getIndices(),
-                                                  row.getElements(),
-                                                  row.getNumElements(),
-                                                  thisCut->ub(),
-                                                  cbcColSolution_);
+              int nz = row.getNumElements();
+              if (nz > 0) {
+                // For >= lb cuts (ub==+inf), negate so the cut is in <= rhs form.
+                if (thisCut->ub() < 1e30) {
+                  score = CoinCutPool::rowCutFitness(row.getIndices(),
+                                                      row.getElements(),
+                                                      nz,
+                                                      thisCut->ub(),
+                                                      cbcColSolution_);
+                } else {
+                  std::vector<double> negCoefs(nz);
+                  const double *coefs = row.getElements();
+                  for (int k = 0; k < nz; k++) negCoefs[k] = -coefs[k];
+                  score = CoinCutPool::rowCutFitness(row.getIndices(),
+                                                      negCoefs.data(),
+                                                      nz,
+                                                      -thisCut->lb(),
+                                                      cbcColSolution_);
+                }
+              } else {
+                score = violation; // 0-NZ cut: fall back to raw violation
+              }
             } else {
               score = violation;
             }
@@ -9543,6 +9642,9 @@ bool CbcModel::solveWithCuts(OsiCuts &cuts, int numberTries, CbcNode *node)
       }
     }
 #endif
+    // Pre-filter round cuts by "best per variable" criterion if enabled.
+    if (cutPoolFilter_ && theseCuts.sizeRowCuts() > 1)
+      filterCutsByBestPerVar(theseCuts, cbcColSolution_, getNumCols());
     int numberColumnCuts = theseCuts.sizeColCuts();
     int numberRowCuts = theseCuts.sizeRowCuts();
     if (violated >= 0)
@@ -10179,15 +10281,29 @@ bool CbcModel::solveWithCuts(OsiCuts &cuts, int numberTries, CbcNode *node)
               const OsiRowCut &c = cuts.rowCut(i);
               double score;
               if (cutRankingMetric_ == 1) {
-                score = CoinCutPool::rowCutFitness(c.row().getIndices(),
-                                                    c.row().getElements(),
-                                                    c.row().getNumElements(),
-                                                    c.ub(), sol);
+                int nz = c.row().getNumElements();
+                if (nz > 0) {
+                  if (c.ub() < 1e30) {
+                    score = CoinCutPool::rowCutFitness(c.row().getIndices(),
+                                                        c.row().getElements(),
+                                                        nz, c.ub(), sol);
+                  } else {
+                    std::vector<double> negCoefs(nz);
+                    const double *coefs = c.row().getElements();
+                    for (int k = 0; k < nz; k++) negCoefs[k] = -coefs[k];
+                    score = CoinCutPool::rowCutFitness(c.row().getIndices(),
+                                                        negCoefs.data(),
+                                                        nz, -c.lb(), sol);
+                  }
+                } else {
+                  double lhs = 0.0;
+                  score = (lhs - c.ub()) / 1.0;
+                }
               } else {
                 double lhs = 0.0;
                 for (int k = 0; k < c.row().getNumElements(); k++)
                   lhs += c.row().getElements()[k] * sol[c.row().getIndices()[k]];
-                score = (lhs - c.ub()) / c.row().getNumElements();
+                score = (lhs - c.ub()) / std::max(c.row().getNumElements(), 1);
               }
               scored[i] = {score, i};
             }
@@ -17039,15 +17155,29 @@ void CbcModel::doHeuristicsAtRoot(int deleteHeuristicsAfterwards)
             const OsiRowCut &c = cuts.rowCut(i);
             double score;
             if (cutRankingMetric_ == 1) {
-              score = CoinCutPool::rowCutFitness(c.row().getIndices(),
-                                                  c.row().getElements(),
-                                                  c.row().getNumElements(),
-                                                  c.ub(), sol);
+              int nz = c.row().getNumElements();
+              if (nz > 0) {
+                if (c.ub() < 1e30) {
+                  score = CoinCutPool::rowCutFitness(c.row().getIndices(),
+                                                      c.row().getElements(),
+                                                      nz, c.ub(), sol);
+                } else {
+                  std::vector<double> negCoefs(nz);
+                  const double *coefs = c.row().getElements();
+                  for (int k = 0; k < nz; k++) negCoefs[k] = -coefs[k];
+                  score = CoinCutPool::rowCutFitness(c.row().getIndices(),
+                                                      negCoefs.data(),
+                                                      nz, -c.lb(), sol);
+                }
+              } else {
+                double lhs = 0.0;
+                score = (lhs - c.ub()) / 1.0;
+              }
             } else {
               double lhs = 0.0;
               for (int k = 0; k < c.row().getNumElements(); k++)
                 lhs += c.row().getElements()[k] * sol[c.row().getIndices()[k]];
-              score = (lhs - c.ub()) / c.row().getNumElements();
+              score = (lhs - c.ub()) / std::max(c.row().getNumElements(), 1);
             }
             scored[i] = {score, i};
           }
