@@ -219,6 +219,7 @@ public:
       NODEBOUNDPROP,
       RACINGLP,
       CUTRANKINGMETRIC,
+      CUTPOOLFILTER,
       LASTKWDPARAM,
 
       // Integer Parameters

@@ -979,6 +979,10 @@ public:
   inline int cutRankingMetric() const { return cutRankingMetric_; }
   /// Set cut ranking metric (0 = violation, 1 = fitness)
   inline void setCutRankingMetric(int value) { cutRankingMetric_ = value; }
+  /// Get cut pool filter flag (1 = filter round cuts via CoinCutPool, 0 = off)
+  inline int cutPoolFilter() const { return cutPoolFilter_; }
+  /// Set cut pool filter flag
+  inline void setCutPoolFilter(int value) { cutPoolFilter_ = value; }
   /** Return true if we want to do cuts
         If allowForTopOfTree zero then just does on multiples of depth
         if 1 then allows for doing at top of tree
@@ -3074,6 +3078,8 @@ private:
   int whenCuts_;
   /// Cut ranking metric: 0 = violation (default), 1 = fitness (CoinCutPool formula)
   int cutRankingMetric_;
+  /// Cut pool filter: 1 = pre-filter round cuts via best-per-variable criterion, 0 = off
+  int cutPoolFilter_;
   /// Hotstart solution
   double *hotstartSolution_;
   /// Hotstart priorities

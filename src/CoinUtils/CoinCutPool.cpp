@@ -257,6 +257,9 @@ double CoinCutPool::calculateFitness(const CoinCut *cut) const {
 double CoinCutPool::rowCutFitness(const int *idxs, const double *coefs,
                                    int nz, double rhs, const double *x)
 {
+    if (nz <= 0)
+        return 0.0;
+
     double lhs = 0.0;
     double minCoef = coefs[0], maxCoef = coefs[0];
     size_t activeCols = 0;

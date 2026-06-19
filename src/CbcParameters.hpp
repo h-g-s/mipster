@@ -470,6 +470,12 @@ public:
       parameters_[CbcParam::CUTRANKINGMETRIC]->modeVal());
   }
 
+  /*! \brief Get the cut pool filter setting (on/off) */
+  inline bool getCutPoolFilter() const
+  {
+    return parameters_[CbcParam::CUTPOOLFILTER]->modeVal() != 0;
+  }
+
   /*! \brief Codes to specify the assignment of branching priorities
 
       - BPOff: no priorities are passed to cbc

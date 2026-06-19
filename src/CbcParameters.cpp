@@ -716,6 +716,7 @@ void CbcParameters::addCbcParams() {
   parameters_[CbcParam::THREADS]->setTopic("Parallelism");
   parameters_[CbcParam::RACINGLP]->setTopic("Parallelism");
   parameters_[CbcParam::CUTRANKINGMETRIC]->setTopic("Cuts");
+  parameters_[CbcParam::CUTPOOLFILTER]->setTopic("Cuts");
 
   // Integer params — ZeroHalf tuning (sub-topic of Cuts)
   for (int code : {CbcParam::ZEROHALFROWMAXFRACTIONALCOUNT,
@@ -815,7 +816,8 @@ void CbcParameters::setDefaults(int strategy) {
      parameters_[CbcParam::PRELARGEFEASTOL]->setDefault("off");
      parameters_[CbcParam::PREPROBINGBEFORECLIQUES]->setDefault("off");
      parameters_[CbcParam::RACINGLP]->setDefault("off");
-     parameters_[CbcParam::CUTRANKINGMETRIC]->setDefault("violation");
+     parameters_[CbcParam::CUTRANKINGMETRIC]->setDefault("fitness");
+     parameters_[CbcParam::CUTPOOLFILTER]->setDefault("on");
      parameters_[CbcParam::SOSPRIORITIZE]->setDefault("off");
      parameters_[CbcParam::STRATEGY]->setDefault("default");
      parameters_[CbcParam::USECGRAPH]->setDefault("on");
@@ -2016,6 +2018,25 @@ void CbcParameters::addCbcSolverKwdParams() {
       "violation", CbcParameters::CutRankingViolation);
   parameters_[CbcParam::CUTRANKINGMETRIC]->appendKwd(
       "fitness", CbcParameters::CutRankingFitness);
+
+  parameters_[CbcParam::CUTPOOLFILTER]->setup(
+      "cutPool!Filter",
+      "Pre-filter round cuts via CoinCutPool before ranking",
+      "When on (default), row cuts generated in each cut-generation round are "
+      "pre-filtered using the CoinCutPool 'best cut per variable' criterion "
+      "before ranking and insertion into the LP.\n"
+      "\n"
+      "The filter keeps a cut only if it has the highest fitness score "
+      "(see -cutRankingMetric) for at least one variable among all cuts "
+      "generated in the same round. This removes redundant/duplicated cuts "
+      "while ensuring every active variable retains its best cut.\n"
+      "\n"
+      "Filtering is applied to row cuts only; column cuts (bound tightenings) "
+      "are always kept. No filtering occurs when fewer than 2 row cuts are "
+      "generated in a round.",
+      CoinParam::displayPriorityHigh);
+  parameters_[CbcParam::CUTPOOLFILTER]->appendKwd("off", CbcParameters::ParamOff);
+  parameters_[CbcParam::CUTPOOLFILTER]->appendKwd("on", CbcParameters::ParamOn);
 
   parameters_[CbcParam::NODEBOUNDPROP]->setup(
     "nodeBoundP!rop",
