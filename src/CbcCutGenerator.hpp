@@ -503,6 +503,24 @@ public:
     if (depth > maxDepthRan_)
       maxDepthRan_ = depth;
   }
+  /// Minimum number of nonzeros among row cuts produced (-1 if no cuts produced)
+  inline int minNzPerCut() const
+  {
+    return minNzPerCut_;
+  }
+  /// Maximum number of nonzeros among row cuts produced (-1 if no cuts produced)
+  inline int maxNzPerCut() const
+  {
+    return maxNzPerCut_;
+  }
+  /// Update min/max NZ trackers with the NZ count of a newly produced cut
+  inline void recordCutNz(int nz)
+  {
+    if (minNzPerCut_ < 0 || nz < minNzPerCut_)
+      minNzPerCut_ = nz;
+    if (nz > maxNzPerCut_)
+      maxNzPerCut_ = nz;
+  }
   /// Set model
   inline void setModel(CbcModel *model)
   {
@@ -602,6 +620,10 @@ private:
   int minDepthRan_;
   /// Maximum B&B depth at which this generator has been called (-1 if never called)
   int maxDepthRan_;
+  /// Minimum number of nonzeros among row cuts produced (-1 if no cuts produced yet)
+  int minNzPerCut_;
+  /// Maximum number of nonzeros among row cuts produced (-1 if no cuts produced yet)
+  int maxNzPerCut_;
 };
 
 // How often to do if mostly switched off (A)

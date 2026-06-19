@@ -56,6 +56,8 @@ CbcCutGenerator::CbcCutGenerator()
   , maximumTries_(-1)
   , minDepthRan_(-1)
   , maxDepthRan_(-1)
+  , minNzPerCut_(-1)
+  , maxNzPerCut_(-1)
 {
 }
 // Normal constructor
@@ -81,6 +83,8 @@ CbcCutGenerator::CbcCutGenerator(CbcModel *model, CglCutGenerator *generator,
   , maximumTries_(-1)
   , minDepthRan_(-1)
   , maxDepthRan_(-1)
+  , minNzPerCut_(-1)
+  , maxNzPerCut_(-1)
 {
   if (howOften < -1900) {
     setGlobalCuts(true);
@@ -132,6 +136,8 @@ CbcCutGenerator::CbcCutGenerator(const CbcCutGenerator &rhs)
   numberShortCutsAtRoot_ = rhs.numberShortCutsAtRoot_;
   minDepthRan_ = rhs.minDepthRan_;
   maxDepthRan_ = rhs.maxDepthRan_;
+  minNzPerCut_ = rhs.minNzPerCut_;
+  maxNzPerCut_ = rhs.maxNzPerCut_;
 }
 
 // Assignment operator
@@ -165,6 +171,8 @@ CbcCutGenerator::operator=(const CbcCutGenerator &rhs)
     numberShortCutsAtRoot_ = rhs.numberShortCutsAtRoot_;
     minDepthRan_ = rhs.minDepthRan_;
     maxDepthRan_ = rhs.maxDepthRan_;
+    minNzPerCut_ = rhs.minNzPerCut_;
+    maxNzPerCut_ = rhs.maxNzPerCut_;
   }
   return *this;
 }
@@ -1539,6 +1547,7 @@ bool CbcCutGenerator::generateCuts(OsiCuts &cs, int fullScan, OsiSolverInterface
         OsiRowCut thisCut = cs.rowCut(k);
         int n = thisCut.row().getNumElements();
         numberElements_ += n;
+        recordCutNz(n);
       }
 #ifdef JJF_ZERO
       printf("generator %s generated %d row cuts\n",
@@ -2064,6 +2073,13 @@ void CbcCutGenerator::addStatistics(const CbcCutGenerator *other)
   }
   if (other->maxDepthRan_ > maxDepthRan_)
     maxDepthRan_ = other->maxDepthRan_;
+  // NZ range (aggregate: keep true min/max across parallel models)
+  if (other->minNzPerCut_ >= 0) {
+    if (minNzPerCut_ < 0 || other->minNzPerCut_ < minNzPerCut_)
+      minNzPerCut_ = other->minNzPerCut_;
+  }
+  if (other->maxNzPerCut_ > maxNzPerCut_)
+    maxNzPerCut_ = other->maxNzPerCut_;
 }
 // Scale back statistics by factor
 void CbcCutGenerator::scaleBackStatistics(int factor)

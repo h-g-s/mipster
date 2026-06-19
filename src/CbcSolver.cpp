@@ -12411,6 +12411,9 @@ int CbcSolver::run(std::deque< std::string > inputQueue,
             cs.nCuts = generator->numberCutsInTotal();
             cs.nCalls = generator->numberTimesEntered();
             cs.nColumnCuts = generator->numberColumnCuts();
+            cs.nElements = generator->numberElementsInTotal();
+            cs.minNz = generator->minNzPerCut();
+            cs.maxNz = generator->maxNzPerCut();
             cs.minDepth = generator->minDepthRan();
             cs.maxDepth = generator->maxDepthRan();
             if (generator->timing()) {

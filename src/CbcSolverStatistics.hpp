@@ -29,10 +29,13 @@
  */
 struct CBCLIB_EXPORT CutGeneratorStats {
   std::string name;
-  int nCuts = 0;        ///< Total row cuts added
+  int nCuts = 0;        ///< Total row cuts added (= total violated cuts proposed)
   int nCalls = 0;       ///< Number of times the generator was invoked
   double time = 0.0;    ///< Time spent in this generator (seconds)
   int nColumnCuts = 0;  ///< Total column cuts added
+  int nElements = 0;    ///< Total nonzeros across all produced row cuts
+  int minNz = -1;       ///< Minimum NZ among produced row cuts (-1 if no cuts)
+  int maxNz = -1;       ///< Maximum NZ among produced row cuts (-1 if no cuts)
   int minDepth = -1;    ///< Minimum B&B depth at which generator was called (-1 if never called)
   int maxDepth = -1;    ///< Maximum B&B depth at which generator was called (-1 if never called)
 };
