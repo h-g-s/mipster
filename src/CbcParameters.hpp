@@ -476,6 +476,12 @@ public:
     return parameters_[CbcParam::CUTPOOLFILTER]->modeVal() != 0;
   }
 
+  /*! \brief Get minimum cuts per round required to activate the cut pool filter */
+  inline int getCutPoolFilterMinCuts() const
+  {
+    return parameters_[CbcParam::CUTPOOLFILTERMINCUTS]->intVal();
+  }
+
   /*! \brief Get the global-pool cut minimum violation threshold */
   inline double getGlobalCutMinViolation() const
   {

@@ -6122,6 +6122,7 @@ CbcModel::CbcModel()
   , whenCuts_(-1)
   , cutRankingMetric_(0)
   , cutPoolFilter_(1)
+  , cutPoolFilterMinCuts_(50)
   , globalCutMinViolation_(0.005)
   , hotstartSolution_(NULL)
   , hotstartPriorities_(NULL)
@@ -6319,6 +6320,7 @@ CbcModel::CbcModel(const OsiSolverInterface &rhs)
   , cutRankingMetric_(0)
   , hotstartSolution_(NULL)
   , cutPoolFilter_(1)
+  , cutPoolFilterMinCuts_(50)
   , hotstartPriorities_(NULL)
   , globalCutMinViolation_(0.005)
   , numberHeuristicSolutions_(0)
@@ -6685,6 +6687,7 @@ CbcModel::CbcModel(const CbcModel &rhs, bool cloneHandler)
   , whenCuts_(rhs.whenCuts_)
   , cutRankingMetric_(rhs.cutRankingMetric_)
   , cutPoolFilter_(rhs.cutPoolFilter_)
+  , cutPoolFilterMinCuts_(rhs.cutPoolFilterMinCuts_)
   , globalCutMinViolation_(rhs.globalCutMinViolation_)
   , numberHeuristicSolutions_(rhs.numberHeuristicSolutions_)
   , numberNodes_(rhs.numberNodes_)
@@ -7090,6 +7093,7 @@ CbcModel &CbcModel::operator=(const CbcModel &rhs)
     whenCuts_ = rhs.whenCuts_;
     cutRankingMetric_ = rhs.cutRankingMetric_;
     cutPoolFilter_ = rhs.cutPoolFilter_;
+    cutPoolFilterMinCuts_ = rhs.cutPoolFilterMinCuts_;
     globalCutMinViolation_ = rhs.globalCutMinViolation_;
     numberHeuristicSolutions_ = rhs.numberHeuristicSolutions_;
     numberNodes_ = rhs.numberNodes_;
@@ -7704,6 +7708,7 @@ void CbcModel::gutsOfCopy(const CbcModel &rhs, int mode)
   whenCuts_ = rhs.whenCuts_;
   cutRankingMetric_ = rhs.cutRankingMetric_;
   cutPoolFilter_ = rhs.cutPoolFilter_;
+  cutPoolFilterMinCuts_ = rhs.cutPoolFilterMinCuts_;
   globalCutMinViolation_ = rhs.globalCutMinViolation_;
 #ifdef CBC_PROBE_10
   depth10Probing_ = NULL;
@@ -9646,8 +9651,9 @@ bool CbcModel::solveWithCuts(OsiCuts &cuts, int numberTries, CbcNode *node)
       }
     }
 #endif
-    // Pre-filter round cuts by "best per variable" criterion if enabled.
-    if (cutPoolFilter_ && theseCuts.sizeRowCuts() > 1)
+    // Pre-filter round cuts by "best per variable" criterion if enabled and
+    // the round produced enough cuts to make filtering worthwhile.
+    if (cutPoolFilter_ && theseCuts.sizeRowCuts() >= cutPoolFilterMinCuts_)
       filterCutsByBestPerVar(theseCuts, cbcColSolution_, getNumCols());
     int numberColumnCuts = theseCuts.sizeColCuts();
     int numberRowCuts = theseCuts.sizeRowCuts();
