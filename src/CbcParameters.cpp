@@ -717,6 +717,7 @@ void CbcParameters::addCbcParams() {
   parameters_[CbcParam::RACINGLP]->setTopic("Parallelism");
   parameters_[CbcParam::CUTRANKINGMETRIC]->setTopic("Cuts");
   parameters_[CbcParam::CUTPOOLFILTER]->setTopic("Cuts");
+  parameters_[CbcParam::CUTPOOLFILTERMINCUTS]->setTopic("Cuts");
   parameters_[CbcParam::GLOBALCUTMINVIOLATION]->setTopic("Cuts");
 
   // Integer params — ZeroHalf tuning (sub-topic of Cuts)
@@ -819,6 +820,7 @@ void CbcParameters::setDefaults(int strategy) {
      parameters_[CbcParam::RACINGLP]->setDefault("off");
      parameters_[CbcParam::CUTRANKINGMETRIC]->setDefault("fitness");
      parameters_[CbcParam::CUTPOOLFILTER]->setDefault("on");
+     parameters_[CbcParam::CUTPOOLFILTERMINCUTS]->setDefault(50);
      parameters_[CbcParam::SOSPRIORITIZE]->setDefault("off");
      parameters_[CbcParam::STRATEGY]->setDefault("default");
      parameters_[CbcParam::USECGRAPH]->setDefault("on");
@@ -2039,6 +2041,16 @@ void CbcParameters::addCbcSolverKwdParams() {
       CoinParam::displayPriorityHigh);
   parameters_[CbcParam::CUTPOOLFILTER]->appendKwd("off", CbcParameters::ParamOff);
   parameters_[CbcParam::CUTPOOLFILTER]->appendKwd("on", CbcParameters::ParamOn);
+
+  parameters_[CbcParam::CUTPOOLFILTERMINCUTS]->setup(
+    "cutPoolFilterMinC!uts",
+    "Minimum cuts in a round to activate the cut pool filter",
+    1, INT_MAX,
+    "When -cutPoolFilter is on, the best-per-variable filter is only applied "
+    "to a cut generation round that produces at least this many row cuts. "
+    "Rounds with fewer cuts are left unfiltered, avoiding overhead and "
+    "inadvertent discarding of useful cuts in low-activity rounds. "
+    "Default 50.");
 
   parameters_[CbcParam::NODEBOUNDPROP]->setup(
     "nodeBoundP!rop",

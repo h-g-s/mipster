@@ -983,6 +983,10 @@ public:
   inline int cutPoolFilter() const { return cutPoolFilter_; }
   /// Set cut pool filter flag
   inline void setCutPoolFilter(int value) { cutPoolFilter_ = value; }
+  /// Get minimum cuts per round required to activate the cut pool filter (default 50)
+  inline int cutPoolFilterMinCuts() const { return cutPoolFilterMinCuts_; }
+  /// Set minimum cuts per round required to activate the cut pool filter
+  inline void setCutPoolFilterMinCuts(int value) { cutPoolFilterMinCuts_ = value; }
   /// Get global-pool cut minimum violation threshold (default 0.005)
   inline double globalCutMinViolation() const { return globalCutMinViolation_; }
   /// Set global-pool cut minimum violation threshold
@@ -3084,6 +3088,8 @@ private:
   int cutRankingMetric_;
   /// Cut pool filter: 1 = pre-filter round cuts via best-per-variable criterion, 0 = off
   int cutPoolFilter_;
+  /// Min cuts in a round to activate the pool filter (default 50)
+  int cutPoolFilterMinCuts_;
   /// Minimum LP violation for a global cut to be re-injected (default 0.005)
   double globalCutMinViolation_;
   /// Hotstart solution

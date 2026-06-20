@@ -224,6 +224,7 @@ public:
 
       // Integer Parameters
       FIRSTINTPARAM,
+      CUTPOOLFILTERMINCUTS,
       AGGREGATEMIXED,
       BKPIVOTINGSTRATEGY,
       BKMAXCALLS,
