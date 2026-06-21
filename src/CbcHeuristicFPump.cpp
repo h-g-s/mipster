@@ -591,11 +591,14 @@ int CbcHeuristicFPump::solutionInternal(double &solutionValue,
       if (CBC_SKIP_CLP_TEST||clpSolver) {
         // better to clean up using primal?
         ClpSimplex *lp = clpSolver->getModelPtr();
-	// try and re-use factorization
-	clpSolver->setSpecialOptions(clpSolver->specialOptions()|8);
+	// try and re-use factorization if no cuts (bit 8 must NOT be set here:
+	// the cloned solver already has bit 1 set from CBC's B&B setup, and
+	// setting bit 8 on top of bit 1 enables factorization reuse via
+	// startFinishOptions |= 2 in OsiClp::resolve(). FPump changes the LP
+	// objective every pass, so reusing the factorization causes stale
+	// bases and far more simplex iterations — ~7x slowdown observed.)
         int options = lp->specialOptions();
         lp->setSpecialOptions(options | 8192);
-        //lp->setSpecialOptions(options|0x01000000);
 #ifdef CLP_INVESTIGATE
         clpSolver->setHintParam(OsiDoReducePrint, false, OsiHintTry);
         lp->setLogLevel(std::max(1, lp->logLevel()));
