@@ -871,7 +871,7 @@ run_instance() {
             | "$GREP_CMD" -oP '[-\d.eE+]+$' | tail -1 || true)
     grep -qi "time limit\|stopped on time" "$logfile" 2>/dev/null && timed_out=1
     grep -qi '^No feasible solution found' "$logfile" 2>/dev/null && no_feasible_solution=1
-    "$GREP_CMD" -qiP "Result - (Problem proven infeasible|Linear relaxation infeasible)|Problem is infeasible|Fast preprocessing: infeasibility proved" \
+    "$GREP_CMD" -qiP "Result - (Problem proven infeasible|Linear relaxation infeasible)|Problem is infeasible|Fast preprocessing: infeasibility proved|Bound propagation: infeasibility proved" \
       "$logfile" 2>/dev/null && proven_infeasible=1
     # Discard sentinel "no incumbent" value and explicit no-solution flag.
     if [[ -n "$obj" ]] && awk -v x="$obj" 'BEGIN { exit (x >= 1e49 || x <= -1e49) ? 0 : 1 }'; then
