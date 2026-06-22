@@ -4914,7 +4914,41 @@ int CbcSolver::postprocess(
         babModel_->solver()->setColSolution(bs);
       }
       setPreProcessingMode(babModel_->solver(), 2);
-      process.postProcess(*babModel_->solver());
+      {
+        FILE *ppfp = babModel_->messageHandler()->filePointer();
+        if (!ppfp) ppfp = stdout;
+        const bool u8 = CbcOutput::useUtf8();
+        const int ll  = babModel_->messageHandler()->logLevel();
+
+        // postProcDeadline_ is left at -1.0 (unlimited) for now — aborting
+        // postprocessing mid-way would discard the B&B solution.
+        // TODO: investigate why postprocessing is slow on some instances and
+        // speed it up; once fast, wire in a deadline here.
+        process.setPostProcDeadline(-1.0);
+
+        double ppStart = CoinWallclockTime();
+        if (ll >= 1) {
+          fprintf(ppfp, "\n%s\n\n", CoinTable::phaseStart("Postprocessing", u8).c_str());
+          fflush(ppfp);
+        }
+        process.postProcess(*babModel_->solver());
+        double ppElapsed = CoinWallclockTime() - ppStart;
+        if (ll >= 1) {
+          fprintf(ppfp, "%s Postprocessing complete \xe2\x80\x94 Time: %.3gs\n",
+            u8 ? "\xe2\x9c\x94" : "OK", ppElapsed);
+          // Warn if postprocessing consumed a surprisingly large amount of time
+          // so it is visible in logs.
+          double solveElapsed = babModel_->getCurrentSeconds();
+          if (ppElapsed > 30.0 && ppElapsed > 0.1 * solveElapsed) {
+            fprintf(ppfp,
+              "  Warning: postprocessing took %.0fs (%.0f%% of solve time %.0fs)."
+              " This may push total runtime past the time limit.\n",
+              ppElapsed, 100.0 * ppElapsed / std::max(solveElapsed, 1.0),
+              solveElapsed);
+          }
+          fflush(ppfp);
+        }
+      }
       // Restore B&B solver bounds after postProcess.
       if (!babLbSave.empty()) {
         int nBabCols = (int)babLbSave.size();

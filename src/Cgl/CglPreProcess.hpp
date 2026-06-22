@@ -359,6 +359,12 @@ public:
   /// Returns true if GF(2) parity presolve is enabled.
   inline bool getParityPresolve() const { return parityPresolve_; }
 
+  /** Set an absolute wallclock deadline for postProcess() LP solves.
+      LP solvers inside postProcess() will be given at most
+      \c max(0, deadline - CoinWallclockTime()) seconds.  Pass -1.0 (the
+      default) to keep the historic behaviour of unlimited LP solves. */
+  inline void setPostProcDeadline(double deadline) { postProcDeadline_ = deadline; }
+
   /** Optional LP solver for cold-start LP solves inside preprocessing.
       When set, this function is called instead of \c initialSolve() on
       each fresh presolved model.  The function receives the
@@ -478,6 +484,9 @@ private:
 
   /// time limit (default COIN_DBL_MAX)
   double timeLimit_;
+
+  /// Absolute wallclock deadline for postProcess() LP solves (-1.0 = unlimited)
+  double postProcDeadline_;
 
   /// keep column names
   bool keepColumnNames_;

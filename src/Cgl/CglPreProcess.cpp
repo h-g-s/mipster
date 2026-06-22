@@ -5833,8 +5833,16 @@ void CglPreProcess::postProcess(OsiSolverInterface &modelIn, int deleteStuff)
 #ifdef CBC_HAS_CLP
       OsiClpSolverInterface * postsolvedSolver =
 	getClpSolver(model);
-      if (postsolvedSolver) // make sure can't stop
-	postsolvedSolver->getModelPtr()->setMaximumSeconds(-1.0);
+      if (postsolvedSolver) {
+        // Respect postprocess deadline: give each LP the remaining budget.
+        // Historic behaviour (unlimited) is preserved when no deadline is set.
+        if (postProcDeadline_ > 0.0) {
+          double rem = postProcDeadline_ - CoinWallclockTime();
+          postsolvedSolver->getModelPtr()->setMaximumWallSeconds(rem > 0.0 ? rem : 0.0);
+        } else {
+          postsolvedSolver->getModelPtr()->setMaximumSeconds(-1.0); // make sure can't stop
+        }
+      }
 #endif
       int * original = NULL;
       if (model->getNumCols()) {
@@ -6537,9 +6545,15 @@ void CglPreProcess::postProcess(OsiSolverInterface &modelIn, int deleteStuff)
   OsiClpSolverInterface * originalSolver =
     getClpSolver(originalModel_);
 #ifndef CBC_SKIP_CLP_TEST
-  if (originalSolver) // make sure can't stop
+  if (originalSolver) {
+    if (postProcDeadline_ > 0.0) {
+      double rem = postProcDeadline_ - CoinWallclockTime();
+      originalSolver->getModelPtr()->setMaximumWallSeconds(rem > 0.0 ? rem : 0.0);
+    } else {
+      originalSolver->getModelPtr()->setMaximumSeconds(-1.0); // make sure can't stop
+    }
+  }
 #endif
-    originalSolver->getModelPtr()->setMaximumSeconds(-1.0);
 #endif
   originalModel_->initialSolve();
   numberIterationsPost_ += originalModel_->getIterationCount();
@@ -8958,6 +8972,7 @@ CglPreProcess::CglPreProcess()
   , rowType_(NULL)
   , useElapsedTime_(true)
   , timeLimit_(COIN_DBL_MAX)
+  , postProcDeadline_(-1.0)
   , keepColumnNames_(false)
   , inspect_(false)
   , parityPresolve_(true)
@@ -8981,6 +8996,7 @@ CglPreProcess::CglPreProcess(const CglPreProcess &rhs)
   , options_(rhs.options_)
   , useElapsedTime_(true)
   , timeLimit_(COIN_DBL_MAX)
+  , postProcDeadline_(-1.0)
   , keepColumnNames_(false)
   , inspect_(rhs.inspect_)
   , parityPresolve_(rhs.parityPresolve_)
@@ -9117,6 +9133,7 @@ CglPreProcess::operator=(const CglPreProcess &rhs)
     rowType_ = CoinCopyOfArray(rhs.rowType_, numberRowType_);
     cuts_ = rhs.cuts_;
     timeLimit_ = rhs.timeLimit_;
+    postProcDeadline_ = rhs.postProcDeadline_;
     keepColumnNames_ = rhs.keepColumnNames_;
   }
   return *this;
