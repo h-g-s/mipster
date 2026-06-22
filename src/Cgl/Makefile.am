@@ -22,6 +22,7 @@ libCgl_la_SOURCES = \
 	CglGMIParam.cpp CglGMIParam.hpp \
 	CglGomory.cpp CglGomory.hpp \
 	CglKnapsackCover.cpp CglKnapsackCover.hpp \
+	CglLKCI.cpp CglLKCI.hpp \
 	CglLandP.cpp CglLandP.hpp \
 	CglLandPMessages.cpp CglLandPMessages.hpp \
 	CglLandPSimplex.cpp CglLandPSimplex.hpp \
@@ -74,6 +75,7 @@ includecoin_HEADERS = \
 	CglGMIParam.hpp \
 	CglGomory.hpp \
 	CglKnapsackCover.hpp \
+	CglLKCI.hpp \
 	CglLandP.hpp \
 	CglLandPValidator.hpp \
 	CglLiftAndProject.hpp \

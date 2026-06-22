@@ -27,6 +27,7 @@
 #include "CglGMI.hpp"
 #include "CglGomory.hpp"
 #include "CglKnapsackCover.hpp"
+#include "CglLKCI.hpp"
 #include "CglLandP.hpp"
 #include "CglMixedIntegerRounding2.hpp"
 #include "CglOddWheel.hpp"
@@ -720,6 +721,17 @@ public:
 
   /*! \brief Get mode for use of knapsack cut generator. */
   inline CbcParameters::CGMode getKnapsackMode() { return (knapsack_.mode_); }
+
+  /*! \brief Obtain a prototype for a LKCI cut generator. */
+  CbcParameters::CGMode getLKCI(CglCutGenerator *&gen);
+
+  /*! \brief Set mode for use of LKCI cut generator. */
+  inline void setLKCIMode(CbcParameters::CGMode mode) {
+    lkci_.mode_ = mode;
+  }
+
+  /*! \brief Get mode for use of LKCI cut generator. */
+  inline CbcParameters::CGMode getLKCIMode() { return (lkci_.mode_); }
 
   /*! \brief Obtain a prototype for a LaGomory cut generator. */
   CbcParameters::CGMode getLaGomory(CglCutGenerator *&gen);
@@ -2344,6 +2356,9 @@ private:
 
   /*! \brief Control variable and prototype for knapsack cover cut generator */
   CGSettings<CglKnapsackCover> knapsack_;
+
+  /*! \brief Control variable and prototype for LKCI cut generator */
+  CGSettings<CglLKCI> lkci_;
 
   /*   \brief Control variable and prototype for LaGomory cut generator */
   CGSettings<CglGomory> laGomory_;

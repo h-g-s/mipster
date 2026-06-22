@@ -75,6 +75,7 @@ static const MipDiagConfig MIP_DIAG_CONFIGS[] = {
   /* individual cuts */
   { "no-gomory",         "gomory",          "off",   NULL,            NULL,  NULL,           NULL  },
   { "no-knapsack",       "knapsack",        "off",   NULL,            NULL,  NULL,           NULL  },
+  { "no-lkci",           "lkci",            "off",   NULL,            NULL,  NULL,           NULL  },
   { "no-flow",           "flow",            "off",   NULL,            NULL,  NULL,           NULL  },
   { "no-mir",            "mixed",           "off",   NULL,            NULL,  NULL,           NULL  },
   { "no-probing",        "probing",         "off",   NULL,            NULL,  NULL,           NULL  },

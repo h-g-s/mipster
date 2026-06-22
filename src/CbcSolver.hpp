@@ -401,6 +401,7 @@ private:
   int gomoryMode_;
   int probingMode_;
   int knapsackMode_;
+  int lkciMode_;
   int redsplitMode_;
   int redsplit2Mode_;
   int GMIMode_;

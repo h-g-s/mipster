@@ -461,6 +461,7 @@ private:
       128 - appData_ has SC data
       256 - clumsy postprocessing
       512 - try for dominated columns
+      1024 - append generated preprocessing row cuts for later passes
   */
   int options_;
   /** Row types (may be NULL) 

@@ -885,6 +885,10 @@ int pushCbcSolverCutParam(CoinParam &param)
     parameters->setKnapsackMode(mode);
     break;
   }
+  case CbcParam::LKCICUTS: {
+    parameters->setLKCIMode(mode);
+    break;
+  }
   case CbcParam::LAGOMORYCUTS: {
     parameters->setLaGomoryMode(mode);
     break;
@@ -935,6 +939,7 @@ int pushCbcSolverCutParam(CoinParam &param)
     parameters->setGMIMode(mode);
     parameters->setGomoryMode(mode);
     parameters->setKnapsackMode(mode);
+    parameters->setLKCIMode(mode);
     parameters->setLaGomoryMode(mode);
     parameters->setLandPMode(mode);
     parameters->setLaTwomirMode(mode);

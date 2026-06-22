@@ -22,6 +22,7 @@
 #include "CglGMI.hpp"
 #include "CglGomory.hpp"
 #include "CglKnapsackCover.hpp"
+#include "CglLKCI.hpp"
 #include "CglLandP.hpp"
 #include "CglMixedIntegerRounding2.hpp"
 #include "CglOddWheel.hpp"
@@ -255,6 +256,15 @@ void installCutGenerators(
   if (knapsackMode) {
     CglKnapsackCover knapsackGen;
     babModel.addCutGenerator(&knapsackGen, translate[knapsackMode], "Knapsack");
+    accuracyFlag[numberGenerators] = 1;
+    switches[numberGenerators++] = -2;
+  }
+
+  // --- LKCI ---
+  int lkciMode = parameters[CbcParam::LKCICUTS]->modeVal();
+  if (lkciMode) {
+    CglLKCI lkciGen;
+    babModel.addCutGenerator(&lkciGen, translate[lkciMode], "LKCI");
     accuracyFlag[numberGenerators] = 1;
     switches[numberGenerators++] = -2;
   }

@@ -144,6 +144,9 @@ void CbcParameters::init(int strategy){
   knapsack_.mode_ = CbcParameters::CGIfMove;
   knapsack_.proto_ = 0;
 
+  lkci_.mode_ = CbcParameters::CGIfMove;
+  lkci_.proto_ = 0;
+
   // landp_mode_ = CbcParameters::CGOff ;
   // landp_.proto_ = 0 ;
 
@@ -245,6 +248,8 @@ CbcParameters::~CbcParameters() {
     delete gomory_.proto_;
   if (knapsack_.proto_)
     delete knapsack_.proto_;
+  if (lkci_.proto_)
+    delete lkci_.proto_;
   if (mir_.proto_)
     delete mir_.proto_;
   if (pathAggr_.proto_)
@@ -630,6 +635,7 @@ void CbcParameters::addCbcParams() {
   parameters_[CbcParam::PREDOMINATEDROWS]->setTopic("MIP Preprocessing");
   parameters_[CbcParam::PRELARGEFEASTOL]->setTopic("MIP Preprocessing");
   parameters_[CbcParam::PREPROBINGBEFORECLIQUES]->setTopic("MIP Preprocessing");
+  parameters_[CbcParam::PRECUTPASSES]->setTopic("MIP Preprocessing");
   parameters_[CbcParam::FPFIXINGMODE]->setTopic("Heuristics");
   parameters_[CbcParam::FPACCUMULATE]->setTopic("Heuristics");
   parameters_[CbcParam::FPRUNMODE]->setTopic("Heuristics");
@@ -813,6 +819,7 @@ void CbcParameters::setDefaults(int strategy) {
      parameters_[CbcParam::PREDOMINATEDROWS]->setDefault("off");
      parameters_[CbcParam::PRELARGEFEASTOL]->setDefault("off");
      parameters_[CbcParam::PREPROBINGBEFORECLIQUES]->setDefault("off");
+     parameters_[CbcParam::PRECUTPASSES]->setDefault("off");
      parameters_[CbcParam::RACINGLP]->setDefault("off");
      parameters_[CbcParam::SOSPRIORITIZE]->setDefault("off");
      parameters_[CbcParam::STRATEGY]->setDefault("default");
@@ -908,6 +915,7 @@ void CbcParameters::setDefaults(int strategy) {
      parameters_[CbcParam::GMICUTS]->setDefault("off");
      parameters_[CbcParam::GOMORYCUTS]->setDefault("ifmove");
      parameters_[CbcParam::KNAPSACKCUTS]->setDefault("ifmove");
+     parameters_[CbcParam::LKCICUTS]->setDefault("ifmove");
      parameters_[CbcParam::LAGOMORYCUTS]->setDefault("off");
      parameters_[CbcParam::LANDPCUTS]->setDefault("off");
      parameters_[CbcParam::LATWOMIRCUTS]->setDefault("off");
@@ -1842,6 +1850,17 @@ void CbcParameters::addCbcSolverKwdParams() {
       "starting point for clique extraction, which can find stronger cliques.");
   parameters_[CbcParam::PREPROBINGBEFORECLIQUES]->appendKwd("off", 0);
   parameters_[CbcParam::PREPROBINGBEFORECLIQUES]->appendKwd("on", 2048);
+
+  parameters_[CbcParam::PRECUTPASSES]->setup(
+      "preCutP!asses",
+      "Append globally valid preprocessing row cuts for later passes",
+      "When on, row cuts generated during MIP preprocessing that are not used "
+      "to replace existing rows are appended as globally valid constraints. "
+      "Later preprocessing passes can then use those cuts for presolve, bound "
+      "tightening, and additional cut generation. This is experimental and "
+      "defaults to off.");
+  parameters_[CbcParam::PRECUTPASSES]->appendKwd("off", 0);
+  parameters_[CbcParam::PRECUTPASSES]->appendKwd("on", 16384);
 
   parameters_[CbcParam::FPFIXINGMODE]->setup(
       "fpF!ixingMode",
@@ -2861,6 +2880,11 @@ void CbcParameters::addCbcSolverCutParams() {
       CUTS_LONGHELP
       " Reference: https://github.com/coin-or/Cgl/wiki/CglKnapsackCover");
 
+  parameters_[CbcParam::LKCICUTS]->setup(
+      "lkci!Cuts", "Whether to use LKCI cuts",
+      CUTS_LONGHELP
+      " Reference: Lifting Knapsack Cover Inequalities heuristic separator.");
+
   parameters_[CbcParam::LAGOMORYCUTS]->setup(
       "lagomory!Cuts", "Whether to use Lagrangean Gomory cuts",
       "This is a gross simplification of 'A Relax-and-Cut Framework for "
@@ -2942,6 +2966,7 @@ void CbcParameters::addCbcSolverCutParams() {
      case CbcParam::GMICUTS:
      case CbcParam::GOMORYCUTS:
      case CbcParam::KNAPSACKCUTS:
+     case CbcParam::LKCICUTS:
      case CbcParam::LANDPCUTS:
      case CbcParam::MIRCUTS:
      case CbcParam::ODDWHEELCUTS:
@@ -2979,6 +3004,7 @@ void CbcParameters::addCbcSolverCutParams() {
         parameters_[code]->appendKwd("longendonly", CbcParameters::CGLongEndOnly);
         break;
      case CbcParam::KNAPSACKCUTS:
+     case CbcParam::LKCICUTS:
         parameters_[code]->appendKwd("onglobal", CbcParameters::CGOnGlobal);
         parameters_[code]->appendKwd("forceandglobal", CbcParameters::CGForceAndGlobal);
         break;
@@ -3606,6 +3632,15 @@ CbcParameters::CGMode CbcParameters::getKnapsack(CglCutGenerator *&gen) {
   gen = dynamic_cast<CglCutGenerator *>(knapsack_.proto_);
 
   return (knapsack_.mode_);
+}
+
+CbcParameters::CGMode CbcParameters::getLKCI(CglCutGenerator *&gen) {
+  if (lkci_.mode_ != CbcParameters::CGOff && lkci_.proto_ == 0) {
+    lkci_.proto_ = new CglLKCI();
+  }
+  gen = dynamic_cast<CglCutGenerator *>(lkci_.proto_);
+
+  return (lkci_.mode_);
 }
 
 CbcParameters::CGMode CbcParameters::getMir(CglCutGenerator *&gen) {

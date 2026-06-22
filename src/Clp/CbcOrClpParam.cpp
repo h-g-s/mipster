@@ -2815,6 +2815,20 @@ This needs to be set before the import of model - so -keepnames off -import xxxx
     parameters.push_back(p);
   }
   {
+    CbcOrClpParam p("lkci!Cuts", "Whether to use LKCI cuts",
+      "off", CBC_PARAM_STR_LKCICUTS);
+
+    p.append("on");
+    p.append("root");
+    p.append("ifmove");
+    p.append("forceOn");
+    p.append("onglobal");
+    p.append("forceandglobal");
+    p.setLonghelp(CUTS_LONGHELP
+      " Reference: Lifting Knapsack Cover Inequalities heuristic separator.");
+    parameters.push_back(p);
+  }
+  {
     CbcOrClpParam p("lagomory!Cuts", "Whether to use Lagrangean Gomory cuts",
       "off", CBC_PARAM_STR_LAGOMORYCUTS);
     p.append("endonlyroot");

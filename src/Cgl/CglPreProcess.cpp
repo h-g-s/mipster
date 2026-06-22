@@ -1180,6 +1180,69 @@ static void writeDebugMps(const OsiSolverInterface *solver,
 #else
 #define writeDebugMps(x, y, z)
 #endif
+
+static bool preprocessCutFinite(double value)
+{
+  return std::isfinite(value) && fabs(value) < 1.0e100;
+}
+
+static bool preprocessCanAppendRowCut(const OsiSolverInterface &model,
+  const OsiRowCut &cut)
+{
+  const CoinPackedVector &row = cut.row();
+  const int n = row.getNumElements();
+  if (n <= 0)
+    return false;
+  if (n > model.getNumCols())
+    return false;
+  const double lower = cut.lb();
+  const double upper = cut.ub();
+  if (!preprocessCutFinite(lower) && lower > -1.0e90)
+    return false;
+  if (!preprocessCutFinite(upper) && upper < 1.0e90)
+    return false;
+  if (lower > upper + 1.0e-12)
+    return false;
+  const int *indices = row.getIndices();
+  const double *elements = row.getElements();
+  for (int i = 0; i < n; i++) {
+    const int iColumn = indices[i];
+    if (iColumn < 0 || iColumn >= model.getNumCols())
+      return false;
+    if (!preprocessCutFinite(elements[i]) || fabs(elements[i]) <= 1.0e-14)
+      return false;
+  }
+  return true;
+}
+
+static bool preprocessCutRedundantByBounds(const OsiSolverInterface &model,
+  const OsiRowCut &cut)
+{
+  const CoinPackedVector &row = cut.row();
+  const int n = row.getNumElements();
+  const int *indices = row.getIndices();
+  const double *elements = row.getElements();
+  const double *columnLower = model.getColLower();
+  const double *columnUpper = model.getColUpper();
+  double minActivity = 0.0;
+  double maxActivity = 0.0;
+  for (int i = 0; i < n; i++) {
+    const int iColumn = indices[i];
+    const double coefficient = elements[i];
+    const double lower = columnLower[iColumn];
+    const double upper = columnUpper[iColumn];
+    if (!preprocessCutFinite(lower) || !preprocessCutFinite(upper))
+      return false;
+    if (coefficient >= 0.0) {
+      minActivity += coefficient * lower;
+      maxActivity += coefficient * upper;
+    } else {
+      minActivity += coefficient * upper;
+      maxActivity += coefficient * lower;
+    }
+  }
+  return minActivity >= cut.lb() - 1.0e-9 && maxActivity <= cut.ub() + 1.0e-9;
+}
 #define USE_CGL_RATIONAL 1
 #if USE_CGL_RATIONAL>0
 #include "CoinRational.hpp"
@@ -1638,6 +1701,8 @@ CglPreProcess::preProcessNonDefault(OsiSolverInterface &model,
       assert (upper[iColumn]==lotsize[i].high);
     }
   }
+  const bool appendCutPasses = (tuning & 16384) != 0;
+  tuning &= ~16384;
   if (tuning >= 1000000) {
     numberPasses = tuning / 1000000;
     tuning %= 1000000;
@@ -1861,6 +1926,10 @@ CglPreProcess::preProcessNonDefault(OsiSolverInterface &model,
   }
   if ((tuning & 1) != 0)
     options_ |= (16|512); // heavy stuff
+  if (appendCutPasses)
+    options_ |= 1024;
+  else
+    options_ &= ~1024;
   //bool heavyProbing = (tuning&1)!=0;
   int makeIntegers = (tuning & 6) >> 1;
   // See if we want to do initial presolve
@@ -6652,6 +6721,7 @@ CglPreProcess::modified(OsiSolverInterface *model,
   int numberRows = newModel->getNumRows();
   CglUniqueRowCuts twoCuts(numberRows);
   int numberColumns = newModel->getNumCols();
+  const bool appendGeneratedRowCuts = (options_ & 1024) != 0;
   bool solveWithDual = true;
   //int number01Integers = 0;
   //int iColumn;
@@ -8031,6 +8101,14 @@ CglPreProcess::modified(OsiSolverInterface *model,
 #endif
         }
       }
+      std::vector<const OsiRowCut *> consumedRowCuts;
+      if (numberStrengthened) {
+        consumedRowCuts.reserve(numberStrengthened);
+        for (iRow = 0; iRow < numberRows; iRow++) {
+          if (whichCut[iRow])
+            consumedRowCuts.push_back(whichCut[iRow]);
+        }
+      }
       // Also can we get rid of duplicate rows
       int numberDrop = 0;
       for (iRow = 0; iRow < numberFromCglDuplicate; iRow++) {
@@ -8520,6 +8598,150 @@ CglPreProcess::modified(OsiSolverInterface *model,
           double upper = thisCut->ub();
           if (n == 2 && lower == upper) {
             twoCuts.insert(*thisCut);
+          }
+        }
+      }
+      if (appendGeneratedRowCuts && cs.sizeRowCuts() && feasible) {
+        CoinBuild build;
+        int numberAppendedRowCuts = 0;
+        int numberAppendedElements = 0;
+        int numberDuplicateRowCuts = 0;
+        int numberBoundRedundantRowCuts = 0;
+        int numberDominatedRowCuts = 0;
+        std::vector<OsiRowCut *> appendCuts;
+        appendCuts.reserve(cs.sizeRowCuts());
+        CglUniqueRowCuts uniqueRows(numberRows + cs.sizeRowCuts());
+        const CoinPackedMatrix *rowCopy = newModel->getMatrixByRow();
+        const int *column = rowCopy->getIndices();
+        const CoinBigIndex *rowStart = rowCopy->getVectorStarts();
+        const int *rowLength = rowCopy->getVectorLengths();
+        const double *rowElements = rowCopy->getElements();
+        const double *rowLower = newModel->getRowLower();
+        const double *rowUpper = newModel->getRowUpper();
+        for (int iExistingRow = 0; iExistingRow < numberRows; iExistingRow++) {
+          OsiRowCut existingRow;
+          existingRow.setLb(rowLower[iExistingRow]);
+          existingRow.setUb(rowUpper[iExistingRow]);
+          existingRow.setRow(rowLength[iExistingRow],
+            column + rowStart[iExistingRow],
+            rowElements + rowStart[iExistingRow]);
+          uniqueRows.insert(existingRow);
+        }
+        const int numberRowCuts = cs.sizeRowCuts();
+        for (int k = 0; k < numberRowCuts; k++) {
+          OsiRowCut *thisCut = cs.rowCutPtr(k);
+          bool alreadyUsed = false;
+          for (size_t j = 0; j < consumedRowCuts.size(); j++) {
+            if (consumedRowCuts[j] == thisCut) {
+              alreadyUsed = true;
+              break;
+            }
+          }
+          if (alreadyUsed)
+            continue;
+          const int n = thisCut->row().getNumElements();
+          if (constraints && n == 2 && thisCut->lb() == thisCut->ub())
+            continue;
+          if (!preprocessCanAppendRowCut(*newModel, *thisCut))
+            continue;
+          if (preprocessCutRedundantByBounds(*newModel, *thisCut)) {
+            numberBoundRedundantRowCuts++;
+            continue;
+          }
+          if (uniqueRows.insertIfNotDuplicate(*thisCut)) {
+            numberDuplicateRowCuts++;
+            continue;
+          }
+          appendCuts.push_back(thisCut);
+        }
+        if (probingCut && !appendCuts.empty()) {
+          OsiSolverInterface *copySolver = newModel->clone();
+          OsiCuts appendSet;
+          for (size_t iCut = 0; iCut < appendCuts.size(); iCut++)
+            appendSet.insert(*appendCuts[iCut]);
+          copySolver->applyCuts(appendSet);
+          CglDuplicateRow dupCuts(copySolver);
+          dupCuts.setMode(8);
+          OsiCuts duplicateCuts;
+          dupCuts.generateCuts(*copySolver, duplicateCuts, info);
+          const int *duplicate = dupCuts.duplicate();
+          const int numberCandidateRows = static_cast< int >(appendCuts.size());
+          if (duplicate) {
+            const int *used = duplicate + numberRows + numberCandidateRows;
+            for (int iCut = 0; iCut < numberCandidateRows; iCut++) {
+              const int iRow = numberRows + iCut;
+              int earliest = used[iRow];
+              while (earliest >= numberRows) {
+                if (duplicate[earliest] == -2)
+                  earliest = used[earliest];
+                else
+                  break;
+              }
+              if (duplicate[iRow] == -2 || earliest == -1 || earliest >= numberRows) {
+                appendCuts[iCut] = NULL;
+                numberDominatedRowCuts++;
+              }
+            }
+          }
+          delete copySolver;
+        }
+        for (size_t iCut = 0; iCut < appendCuts.size(); iCut++) {
+          OsiRowCut *thisCut = appendCuts[iCut];
+          if (!thisCut)
+            continue;
+          const int n = thisCut->row().getNumElements();
+          const int *columnCut = thisCut->row().getIndices();
+          const double *elementCut = thisCut->row().getElements();
+          build.addRow(n, columnCut, elementCut, thisCut->lb(), thisCut->ub());
+          numberAppendedRowCuts++;
+          numberAppendedElements += n;
+        }
+        if (numberAppendedRowCuts) {
+          const int oldNumberRows = newModel->getNumRows();
+          newModel->addRows(build);
+          numberRows = newModel->getNumRows();
+          OsiRowCut **largerWhichCut = new OsiRowCut *[numberRows + 1];
+          memset(largerWhichCut, 0, (numberRows + 1) * sizeof(OsiRowCut *));
+          memcpy(largerWhichCut, whichCut, oldNumberRows * sizeof(OsiRowCut *));
+          delete[] whichCut;
+          whichCut = largerWhichCut;
+          info.strengthenRow = whichCut;
+          info.formulation_rows = numberRows;
+          numberChangedThisPass += numberAppendedRowCuts;
+          needResolve = true;
+          char *temp = CoinCopyOfArrayPartial(rowType_, numberRows, numberRowType_);
+          delete[] rowType_;
+          rowType_ = temp;
+          for (int iRow = numberRowType_; iRow < oldNumberRows; iRow++)
+            rowType_[iRow] = 0;
+          for (int iRow = oldNumberRows; iRow < numberRows; iRow++)
+            rowType_[iRow] = -1;
+          numberRowType_ = numberRows;
+          if (inspect_) {
+            FILE *fp = handler_->filePointer();
+            if (fp) {
+              fprintf(fp, "  [Preproc pass %d.%d] appended row cuts: %d rows, %d NZ",
+                iBigPass, iPass, numberAppendedRowCuts, numberAppendedElements);
+              if (numberDuplicateRowCuts || numberBoundRedundantRowCuts || numberDominatedRowCuts) {
+                fprintf(fp, " (");
+                if (numberDuplicateRowCuts)
+                  fprintf(fp, "%d duplicate%s",
+                    numberDuplicateRowCuts, numberDuplicateRowCuts == 1 ? "" : "s");
+                if (numberDuplicateRowCuts && (numberBoundRedundantRowCuts || numberDominatedRowCuts))
+                  fprintf(fp, ", ");
+                if (numberBoundRedundantRowCuts)
+                  fprintf(fp, "%d bound-redundant",
+                    numberBoundRedundantRowCuts);
+                if (numberBoundRedundantRowCuts && numberDominatedRowCuts)
+                  fprintf(fp, ", ");
+                if (numberDominatedRowCuts)
+                  fprintf(fp, "%d dominated%s",
+                    numberDominatedRowCuts, numberDominatedRowCuts == 1 ? "" : "s");
+                fprintf(fp, " skipped)");
+              }
+              fprintf(fp, "\n");
+              fflush(fp);
+            }
           }
         }
       }
@@ -9279,9 +9501,13 @@ void CglPreProcess::createOriginalIndices()
       break;
   }
   int nRows, nColumns;
+  int nPresolvedRows = 0;
+  int nPresolvedColumns = 0;
   if (iPass >= 0) {
-    nRows = model_[iPass]->getNumRows();
-    nColumns = model_[iPass]->getNumCols();
+    nPresolvedRows = model_[iPass]->getNumRows();
+    nPresolvedColumns = model_[iPass]->getNumCols();
+    nRows = modifiedModel_[iPass] ? modifiedModel_[iPass]->getNumRows() : nPresolvedRows;
+    nColumns = modifiedModel_[iPass] ? modifiedModel_[iPass]->getNumCols() : nPresolvedColumns;
   } else {
     nRows = originalModel_->getNumRows();
     nColumns = originalModel_->getNumCols();
@@ -9291,23 +9517,39 @@ void CglPreProcess::createOriginalIndices()
   delete[] originalRow_;
   originalRow_ = new int[nRows];
   if (iPass >= 0) {
-    memcpy(originalColumn_, presolve_[iPass]->originalColumns(),
-      nColumns * sizeof(int));
-    memcpy(originalRow_, presolve_[iPass]->originalRows(),
-      nRows * sizeof(int));
+    const int *presolvedOriginalColumns = presolve_[iPass]->originalColumns();
+    const int *presolvedOriginalRows = presolve_[iPass]->originalRows();
+    for (int i = 0; i < nColumns; i++)
+      originalColumn_[i] = i;
+    for (int i = 0; i < nRows; i++)
+      originalRow_[i] = -1;
+    if (presolvedOriginalColumns)
+      memcpy(originalColumn_, presolvedOriginalColumns,
+        nPresolvedColumns * sizeof(int));
+    if (presolvedOriginalRows)
+      memcpy(originalRow_, presolvedOriginalRows,
+        nPresolvedRows * sizeof(int));
     iPass--;
     for (; iPass >= 0; iPass--) {
+      if (!presolve_[iPass])
+        continue;
       const int *originalColumns = presolve_[iPass]->originalColumns();
+      int nColumnsNow = model_[iPass] ? model_[iPass]->getNumCols() : 0;
       int i;
-      for (i = 0; i < nColumns; i++)
-        originalColumn_[i] = originalColumns[originalColumn_[i]];
+      for (i = 0; i < nColumns; i++) {
+        int iColumn = originalColumn_[i];
+        if (originalColumns && iColumn >= 0 && iColumn < nColumnsNow)
+          originalColumn_[i] = originalColumns[iColumn];
+        else
+          originalColumn_[i] = iColumn;
+      }
       const int *originalRows = presolve_[iPass]->originalRows();
-      int nRowsNow = model_[iPass]->getNumRows();
+      int nRowsNow = model_[iPass] ? model_[iPass]->getNumRows() : 0;
       for (i = 0; i < nRows; i++) {
         int iRow = originalRow_[i];
-        if (iRow >= 0 && iRow < nRowsNow)
+        if (originalRows && iRow >= 0 && iRow < nRowsNow)
           originalRow_[i] = originalRows[iRow];
-        else
+        else if (iRow >= nRowsNow)
           originalRow_[i] = -1;
       }
     }
@@ -10069,37 +10311,39 @@ CglBK::CglBK(const OsiSolverInterface &model, const char *rowType,
       which[nSort++] = i;
     }
   }
-  CoinSort_2(sort, sort + nSort, which);
-  double value = sort[0];
-  //int nDominated = 0;
-  for (int i = 1; i < nSort; i++) {
-    if (sort[i] == value) {
-      int i1 = which[i - 1];
-      int i2 = which[i];
-      if (rowLower[i1] == rowLower[i2]) {
-        CoinBigIndex first1 = rowStart[i1];
-        CoinBigIndex last1 = first1 + 1;
-        if (column[first1] > column[last1]) {
-          first1 = last1;
-          last1 = rowStart[i1];
-        }
-        int iColumn11 = column[first1];
-        int iColumn12 = column[last1];
-        CoinBigIndex first2 = rowStart[i2];
-        CoinBigIndex last2 = first2 + 1;
-        if (column[first2] > column[last2]) {
-          first2 = last2;
-          last2 = rowStart[i2];
-        }
-        int iColumn21 = column[first2];
-        int iColumn22 = column[last2];
-        if (iColumn11 == iColumn21 && iColumn12 == iColumn22 && elementByRow[first1] == elementByRow[first2] && elementByRow[last1] == elementByRow[last2]) {
-          dominated_[i2] = 1;
-          //nDominated++;
+  if (nSort) {
+    CoinSort_2(sort, sort + nSort, which);
+    double value = sort[0];
+    //int nDominated = 0;
+    for (int i = 1; i < nSort; i++) {
+      if (sort[i] == value) {
+        int i1 = which[i - 1];
+        int i2 = which[i];
+        if (rowLower[i1] == rowLower[i2]) {
+          CoinBigIndex first1 = rowStart[i1];
+          CoinBigIndex last1 = first1 + 1;
+          if (column[first1] > column[last1]) {
+            first1 = last1;
+            last1 = rowStart[i1];
+          }
+          int iColumn11 = column[first1];
+          int iColumn12 = column[last1];
+          CoinBigIndex first2 = rowStart[i2];
+          CoinBigIndex last2 = first2 + 1;
+          if (column[first2] > column[last2]) {
+            first2 = last2;
+            last2 = rowStart[i2];
+          }
+          int iColumn21 = column[first2];
+          int iColumn22 = column[last2];
+          if (iColumn11 == iColumn21 && iColumn12 == iColumn22 && elementByRow[first1] == elementByRow[first2] && elementByRow[last1] == elementByRow[last2]) {
+            dominated_[i2] = 1;
+            //nDominated++;
+          }
         }
       }
+      value = sort[i];
     }
-    value = sort[i];
   }
   //if (nDominated)
   //printf("%d duplicate doubleton rows!\n",nDominated);

@@ -2280,6 +2280,7 @@ CbcSolver::CbcSolver()
       gomoryMode_(CbcParameters::CGIfMove),
       probingMode_(CbcParameters::CGIfMove),
       knapsackMode_(CbcParameters::CGIfMove),
+      lkciMode_(CbcParameters::CGIfMove),
       redsplitMode_(CbcParameters::CGOff),
       redsplit2Mode_(CbcParameters::CGOff), GMIMode_(CbcParameters::CGOff),
       cliqueMode_(CbcParameters::CGIfMove), oldCliqueMode_(CbcParameters::CGIfMove),
@@ -2408,7 +2409,7 @@ CbcSolver::CbcSolver(const CbcSolver &rhs)
       scaleBarrier_(rhs.scaleBarrier_), doKKT_(rhs.doKKT_),
       crossover_(rhs.crossover_), biLinearProblem_(rhs.biLinearProblem_),
       gomoryMode_(rhs.gomoryMode_), probingMode_(rhs.probingMode_),
-      knapsackMode_(rhs.knapsackMode_), redsplitMode_(rhs.redsplitMode_),
+      knapsackMode_(rhs.knapsackMode_), lkciMode_(rhs.lkciMode_), redsplitMode_(rhs.redsplitMode_),
       redsplit2Mode_(rhs.redsplit2Mode_), GMIMode_(rhs.GMIMode_),
       cliqueMode_(rhs.cliqueMode_), oldCliqueMode_(rhs.oldCliqueMode_),
       oddWheelMode_(rhs.oddWheelMode_), mixedMode_(rhs.mixedMode_),
@@ -2594,6 +2595,7 @@ CbcSolver &CbcSolver::operator=(const CbcSolver &rhs)
     gomoryMode_ = rhs.gomoryMode_;
     probingMode_ = rhs.probingMode_;
     knapsackMode_ = rhs.knapsackMode_;
+    lkciMode_ = rhs.lkciMode_;
     redsplitMode_ = rhs.redsplitMode_;
     redsplit2Mode_ = rhs.redsplit2Mode_;
     GMIMode_ = rhs.GMIMode_;
@@ -2855,6 +2857,7 @@ void CbcSolver::resetRunState()
   gomoryMode_ = CbcParameters::CGIfMove;
   probingMode_ = CbcParameters::CGIfMove;
   knapsackMode_ = CbcParameters::CGIfMove;
+  lkciMode_ = CbcParameters::CGIfMove;
   redsplitMode_ = CbcParameters::CGOff;
   redsplit2Mode_ = CbcParameters::CGOff;
   GMIMode_ = CbcParameters::CGOff;
@@ -3014,6 +3017,7 @@ static void cbcSetupDefaults(CbcModel &model, CbcParameters &parameters)
   parameters[CbcParam::GOMORYCUTS]->setVal("ifmove");
   parameters[CbcParam::PROBINGCUTS]->setVal("ifmove");
   parameters[CbcParam::KNAPSACKCUTS]->setVal("ifmove");
+  parameters[CbcParam::LKCICUTS]->setVal("ifmove");
   parameters[CbcParam::ZEROHALFCUTS]->setVal("ifmove");
   parameters[CbcParam::REDSPLITCUTS]->setVal("off");
   parameters[CbcParam::REDSPLIT2CUTS]->setVal("off");
@@ -3584,6 +3588,33 @@ int CbcSolver::preprocess(
     // Add in generators
     if ((model_.moreSpecialOptions() & 65536) == 0)
       process.addCutGenerator(&generator1);
+    if ((tunePreProcess_ & 16384) != 0) {
+      const int numberGenerators = babModel_->numberCutGenerators();
+      int numberAdded = 0;
+      for (int iGenerator = 0; iGenerator < numberGenerators; iGenerator++) {
+        CglCutGenerator *generator = babModel_->cutGenerator(iGenerator)->generator();
+        if (!generator || generator->needsOriginalModel())
+          continue;
+        if (dynamic_cast< CglProbing * >(generator))
+          continue;
+        process.addCutGenerator(generator);
+        numberAdded++;
+      }
+      if (!numberAdded) {
+        if (cliqueMode_ != CbcParameters::CGOff) {
+          CglBKClique bkCliqueGen;
+          bkCliqueGen.setMaxCallsBK(maxCallsBK_);
+          bkCliqueGen.setExtendingMethod(bkClqExtMethod_);
+          bkCliqueGen.setPivotingStrategy(static_cast< CoinBronKerbosch::PivotingStrategy >(bkPivotingStrategy_));
+          process.addCutGenerator(&bkCliqueGen);
+        }
+        if (oddWheelMode_ != CbcParameters::CGOff) {
+          CglOddWheel oddWheelGen;
+          oddWheelGen.setExtendingMethod(oddWExtMethod_);
+          process.addCutGenerator(&oddWheelGen);
+        }
+      }
+    }
     int translate[] = { 9999, 0, 0, -3, 2, 3, -2, 9999, 4, 5, 0, -2 };
     process.passInMessageHandler(babModel_->messageHandler());
     // process.messageHandler()->setLogLevel(babModel_->logLevel());
@@ -7078,6 +7109,11 @@ int CbcSolver::run(std::deque< std::string > inputQueue,
     int &knapsackMode = knapsackMode_;
     assert(parameters[CbcParam::KNAPSACKCUTS]->modeVal() == knapsackMode);
 
+    CglLKCI lkciGen;
+    lkciMode_ = CbcParameters::CGIfMove;
+    int &lkciMode = lkciMode_;
+    assert(parameters[CbcParam::LKCICUTS]->modeVal() == lkciMode);
+
     CglRedSplit redsplitGen;
     redsplitMode_ = CbcParameters::CGOff;
     int &redsplitMode = redsplitMode_;
@@ -7695,11 +7731,15 @@ int CbcSolver::run(std::deque< std::string > inputQueue,
           } else if (cbcParamCode == CbcParam::PROCESSTUNE) {
             tunePreProcess = iValue;
           } else if (cbcParamCode == CbcParam::PREMAJORPASSES) {
-            tunePreProcess = iValue * 1000000 + (tunePreProcess % 1000000);
+            int flags = tunePreProcess & 16384;
+            tunePreProcess &= ~16384;
+            tunePreProcess = iValue * 1000000 + (tunePreProcess % 1000000) + flags;
           } else if (cbcParamCode == CbcParam::PREMINORPASSES) {
+            int flags = tunePreProcess & 16384;
+            tunePreProcess &= ~16384;
             int aa = tunePreProcess / 1000000;
             int cccc = tunePreProcess % 10000;
-            tunePreProcess = aa * 1000000 + iValue * 10000 + cccc;
+            tunePreProcess = aa * 1000000 + iValue * 10000 + cccc + flags;
           } else if (cbcParamCode == CbcParam::FPRETRIES) {
             int tune = parameters[CbcParam::FPUMPTUNE]->intVal();
             tune = (tune / 1000000) * 1000000 + iValue * 1000 + (tune % 1000);
@@ -7963,6 +8003,10 @@ int CbcSolver::run(std::deque< std::string > inputQueue,
           defaultSettings = false; // user knows what she is doing
           knapsackMode = mode;
           break;
+        case CbcParam::LKCICUTS:
+          defaultSettings = false; // user knows what she is doing
+          lkciMode = mode;
+          break;
         case CbcParam::REDSPLITCUTS:
           defaultSettings = false; // user knows what she is doing
           redsplitMode = mode;
@@ -8017,6 +8061,7 @@ int CbcSolver::run(std::deque< std::string > inputQueue,
           gomoryMode = mode;
           probingMode = mode;
           knapsackMode = mode;
+          lkciMode = mode;
           cliqueMode = mode;
           flowMode = mode;
           mixedMode = mode;
@@ -8026,6 +8071,7 @@ int CbcSolver::run(std::deque< std::string > inputQueue,
           parameters[CbcParam::GOMORYCUTS]->setVal(mode);
           parameters[CbcParam::PROBINGCUTS]->setVal(mode);
           parameters[CbcParam::KNAPSACKCUTS]->setVal(mode);
+          parameters[CbcParam::LKCICUTS]->setVal(mode);
           parameters[CbcParam::CLIQUECUTS]->setVal(mode);
           parameters[CbcParam::FLOWCUTS]->setVal(mode);
           parameters[CbcParam::MIRCUTS]->setVal(mode);
@@ -8094,6 +8140,10 @@ int CbcSolver::run(std::deque< std::string > inputQueue,
           break;
         case CbcParam::PREPROBINGBEFORECLIQUES:
           tunePreProcess &= ~2048;
+          tunePreProcess |= mode;
+          break;
+        case CbcParam::PRECUTPASSES:
+          tunePreProcess &= ~16384;
           tunePreProcess |= mode;
           break;
         case CbcParam::RACINGLP:

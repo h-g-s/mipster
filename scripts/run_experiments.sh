@@ -1186,10 +1186,10 @@ print_env_info() {
   if [[ "$(uname -s)" == "Darwin" ]]; then
     if command -v sysctl &>/dev/null; then
       local arch model cpus cores
-      arch=$(sysctl -n hw.machine 2>/dev/null)
-      model=$(sysctl -n machdep.cpu.brand_string 2>/dev/null)
-      cpus=$(sysctl -n hw.logicalcpu 2>/dev/null)
-      cores=$(sysctl -n hw.physicalcpu 2>/dev/null)
+      arch=$(sysctl -n hw.machine 2>/dev/null || true)
+      model=$(sysctl -n machdep.cpu.brand_string 2>/dev/null || true)
+      cpus=$(sysctl -n hw.logicalcpu 2>/dev/null || true)
+      cores=$(sysctl -n hw.physicalcpu 2>/dev/null || true)
       printf "  %-18s %s\n" "Architecture:"  "${arch:-?}"
       printf "  %-18s %s\n" "CPU model:"     "${model:-?}"
       printf "  %-18s %s  (%s core)\n" "CPU count:" "${cpus:-?}" "${cores:-?}"
@@ -1308,10 +1308,10 @@ write_setup_md() {
   local mem_total="" mem_used="" mem_avail=""
   if [[ "$(uname -s)" == "Darwin" ]]; then
     if command -v sysctl &>/dev/null; then
-      arch=$(sysctl -n hw.machine 2>/dev/null)
-      cpu_model=$(sysctl -n machdep.cpu.brand_string 2>/dev/null)
-      cpus=$(sysctl -n hw.logicalcpu 2>/dev/null)
-      cores_per_sock=$(sysctl -n hw.physicalcpu 2>/dev/null)
+      arch=$(sysctl -n hw.machine 2>/dev/null || true)
+      cpu_model=$(sysctl -n machdep.cpu.brand_string 2>/dev/null || true)
+      cpus=$(sysctl -n hw.logicalcpu 2>/dev/null || true)
+      cores_per_sock=$(sysctl -n hw.physicalcpu 2>/dev/null || true)
     fi
   else
     if command -v lscpu &>/dev/null; then

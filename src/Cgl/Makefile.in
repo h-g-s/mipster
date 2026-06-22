@@ -126,7 +126,7 @@ am_libCgl_la_OBJECTS = Cgl012cut.lo CglAllDifferent.lo CglBKClique.lo \
 	CglClique.lo CglCliqueHelper.lo CglCliqueStrengthening.lo \
 	CglCutGenerator.lo CglDuplicateRow.lo CglFlowCover.lo \
 	CglGMI.lo CglGMIParam.lo CglGomory.lo CglKnapsackCover.lo \
-	CglLandP.lo CglLandPMessages.lo CglLandPSimplex.lo \
+	CglLKCI.lo CglLandP.lo CglLandPMessages.lo CglLandPSimplex.lo \
 	CglLandPTabRow.lo CglLandPUtils.lo CglLandPValidator.lo \
 	CglLiftAndProject.lo CglMessage.lo CglMixedIntegerRounding.lo \
 	CglMixedIntegerRounding2.lo CglOddHole.lo CglOddWheel.lo \
@@ -163,7 +163,8 @@ am__depfiles_remade = ./$(DEPDIR)/Cgl012cut.Plo \
 	./$(DEPDIR)/CglDuplicateRow.Plo ./$(DEPDIR)/CglFlowCover.Plo \
 	./$(DEPDIR)/CglGMI.Plo ./$(DEPDIR)/CglGMIParam.Plo \
 	./$(DEPDIR)/CglGomory.Plo ./$(DEPDIR)/CglKnapsackCover.Plo \
-	./$(DEPDIR)/CglLandP.Plo ./$(DEPDIR)/CglLandPMessages.Plo \
+	./$(DEPDIR)/CglLKCI.Plo ./$(DEPDIR)/CglLandP.Plo \
+	./$(DEPDIR)/CglLandPMessages.Plo \
 	./$(DEPDIR)/CglLandPSimplex.Plo ./$(DEPDIR)/CglLandPTabRow.Plo \
 	./$(DEPDIR)/CglLandPUtils.Plo \
 	./$(DEPDIR)/CglLandPValidator.Plo \
@@ -443,6 +444,7 @@ libCgl_la_SOURCES = \
 	CglGMIParam.cpp CglGMIParam.hpp \
 	CglGomory.cpp CglGomory.hpp \
 	CglKnapsackCover.cpp CglKnapsackCover.hpp \
+	CglLKCI.cpp CglLKCI.hpp \
 	CglLandP.cpp CglLandP.hpp \
 	CglLandPMessages.cpp CglLandPMessages.hpp \
 	CglLandPSimplex.cpp CglLandPSimplex.hpp \
@@ -494,6 +496,7 @@ includecoin_HEADERS = \
 	CglGMIParam.hpp \
 	CglGomory.hpp \
 	CglKnapsackCover.hpp \
+	CglLKCI.hpp \
 	CglLandP.hpp \
 	CglLandPValidator.hpp \
 	CglLiftAndProject.hpp \
@@ -582,6 +585,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/CglGMIParam.Plo@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/CglGomory.Plo@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/CglKnapsackCover.Plo@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/CglLKCI.Plo@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/CglLandP.Plo@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/CglLandPMessages.Plo@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/CglLandPSimplex.Plo@am__quote@ # am--include-marker
@@ -773,6 +777,7 @@ distclean: distclean-am
 	-rm -f ./$(DEPDIR)/CglGMIParam.Plo
 	-rm -f ./$(DEPDIR)/CglGomory.Plo
 	-rm -f ./$(DEPDIR)/CglKnapsackCover.Plo
+	-rm -f ./$(DEPDIR)/CglLKCI.Plo
 	-rm -f ./$(DEPDIR)/CglLandP.Plo
 	-rm -f ./$(DEPDIR)/CglLandPMessages.Plo
 	-rm -f ./$(DEPDIR)/CglLandPSimplex.Plo
@@ -857,6 +862,7 @@ maintainer-clean: maintainer-clean-am
 	-rm -f ./$(DEPDIR)/CglGMIParam.Plo
 	-rm -f ./$(DEPDIR)/CglGomory.Plo
 	-rm -f ./$(DEPDIR)/CglKnapsackCover.Plo
+	-rm -f ./$(DEPDIR)/CglLKCI.Plo
 	-rm -f ./$(DEPDIR)/CglLandP.Plo
 	-rm -f ./$(DEPDIR)/CglLandPMessages.Plo
 	-rm -f ./$(DEPDIR)/CglLandPSimplex.Plo
