@@ -66,7 +66,7 @@ class CbcRootHeurOutput;
 
 // #define CBC_CHECK_BASIS 1
 
-//#############################################################################
+// #############################################################################
 
 /** Simple Branch and bound class
 
@@ -82,20 +82,20 @@ class CbcRootHeurOutput;
   proceeds as follows:
   <ul>
     <li> The node representing the most promising parent subproblem is popped
-	 from the heap which holds the set of subproblems requiring further
-	 evaluation.
+         from the heap which holds the set of subproblems requiring further
+         evaluation.
     <li> Using branching instructions stored in the node, and information in
-	 its ancestors, the model and solver are adjusted to create the
-	 active subproblem.
+         its ancestors, the model and solver are adjusted to create the
+         active subproblem.
     <li> If the parent subproblem will require further evaluation
-	 (<i>i.e.</i>, there are branches remaining) its node is pushed back
-	 on the heap. Otherwise, the node is deleted.  This may trigger
-	 recursive deletion of ancestors.
+         (<i>i.e.</i>, there are branches remaining) its node is pushed back
+         on the heap. Otherwise, the node is deleted.  This may trigger
+         recursive deletion of ancestors.
     <li> The newly created subproblem is evaluated.
     <li> If the subproblem requires further evaluation, a node is created.
-	 All information needed to recreate the subproblem (branching
-	 information, row and column cuts) is placed in the node and the node
-	 is added to the set of subproblems awaiting further evaluation.
+         All information needed to recreate the subproblem (branching
+         information, row and column cuts) is placed in the node and the node
+         is added to the set of subproblems awaiting further evaluation.
   </ul>
   Note that there is never a node representing the active subproblem; the model
   and solver represent the active subproblem.
@@ -105,16 +105,16 @@ class CbcRootHeurOutput;
   For a typical subproblem, the sequence of events is as follows:
   <ul>
     <li> The subproblem is rebuilt for further evaluation: One result of a
-	 call to addCuts() is a traversal of ancestors, leaving a list of all
-	 cuts used in the ancestors in #addedCuts_. This list is then scanned
-	 to construct a basis that includes only tight cuts. Entries for
-	 loose cuts are set to NULL.
+         call to addCuts() is a traversal of ancestors, leaving a list of all
+         cuts used in the ancestors in #addedCuts_. This list is then scanned
+         to construct a basis that includes only tight cuts. Entries for
+         loose cuts are set to NULL.
     <li> The subproblem is evaluated: One result of a call to solveWithCuts()
          is the return of a set of newly generated cuts for the subproblem.
-	 #addedCuts_ is also kept up-to-date as old cuts become loose.
+         #addedCuts_ is also kept up-to-date as old cuts become loose.
     <li> The subproblem is stored for further processing: A call to
-	 CbcNodeInfo::addCuts() adds the newly generated cuts to the
-	 CbcNodeInfo object associated with this node.
+         CbcNodeInfo::addCuts() adds the newly generated cuts to the
+         CbcNodeInfo object associated with this node.
   </ul>
   See CbcCountRowCut for details of the bookkeeping associated with cut
   management.
@@ -370,6 +370,7 @@ public:
         newNode NULL if no new node created
     */
   int doOneNode(CbcModel *baseModel, CbcNode *&node, CbcNode *&newNode);
+
 public:
   /** \brief Reoptimise an LP relaxation
 
@@ -481,7 +482,7 @@ public:
   void analyzeObjective();
   /** Returns postProcessed solution in solver(called from event handler)
      Normally used for integer solution (not really tested otherwise)
-    solutionType 1 is best integer so far, 0 is current solution 
+    solutionType 1 is best integer so far, 0 is current solution
     (may not be integer) */
   const OsiSolverInterface *postProcessedSolver(int solutionType = 1);
 
@@ -499,14 +500,14 @@ public:
   void flipModel();
   /**
        Clean model i.e. make SOS/integer variables exactly at bound if needed.
-       Only if moreSpecialOptions2_ 15 bit set (32768) as there is a small 
+       Only if moreSpecialOptions2_ 15 bit set (32768) as there is a small
        overhead (more2 in standalone cbc).
        Fine tuning can be done in configure with -DCLEAN_INTEGER_VARIABLES
        and -DZERO_ODD_TOLERANCE=1.0e-nn
-       If CLEAN_INTEGER_VARIABLES not defined then cleaning is only done for 
+       If CLEAN_INTEGER_VARIABLES not defined then cleaning is only done for
        SOS variables.
-       If ZERO_ODD_TOLERANCE not defined then 1.0e-14 used.  You can define as 
-       0.0 if you are paranoid. 
+       If ZERO_ODD_TOLERANCE not defined then 1.0e-14 used.  You can define as
+       0.0 if you are paranoid.
        Returns number of variables forced out
        cleanVariables array will be used if exists
      */
@@ -514,9 +515,9 @@ public:
 
   /** Removes integer infeasibilities from the best
    * integer solution stored. In models with numerical
-   * instability can increase the overall amount of 
+   * instability can increase the overall amount of
    * infeasibilities */
-  void roundIntVars(); 
+  void roundIntVars();
 
   /// Sets up cleanVariables array (i.e. ones to be careful about)
   char *setupCleanVariables();
@@ -587,9 +588,9 @@ public:
 
   void findIntegers(bool startAgain, int type = 0);
   /** Add SOS info to solver -
-	Overwrites SOS information in solver with information
-	in CbcModel.  Has no effect with some solvers. 
-	Also updates integer info. */
+        Overwrites SOS information in solver with information
+        in CbcModel.  Has no effect with some solvers.
+        Also updates integer info. */
   void addSOSEtcToSolver();
 
 #ifdef SWITCH_VARIABLES
@@ -645,9 +646,9 @@ public:
 
   /// Get the cutoff bound on the objective function - always as minimize
   inline double getCutoff() const
-  { //double value ;
-    //solver_->getDblParam(OsiDualObjectiveLimit,value) ;
-    //assert( dblParam_[CbcCurrentCutoff]== value * solver_->getObjSense());
+  { // double value ;
+    // solver_->getDblParam(OsiDualObjectiveLimit,value) ;
+    // assert( dblParam_[CbcCurrentCutoff]== value * solver_->getObjSense());
     return dblParam_[CbcCurrentCutoff];
   }
 
@@ -664,27 +665,32 @@ public:
   }
 
   /// Set the \link CbcModel::CbcMaxNodesNotImproving limit \endlink
-  inline bool setMaxNodesNotImproving(int value) {
+  inline bool setMaxNodesNotImproving(int value)
+  {
     return setIntParam(CbcMaxNodesNotImproving, value);
   }
 
   /// Get the \link CbcModel::CbcMaxNodesNotImproving limit \endlink
-  inline int getMaxNodesNotImproving() const {
+  inline int getMaxNodesNotImproving() const
+  {
     return getIntParam(CbcMaxNodesNotImproving);
   }
 
   /// Set the \link CbcModel::CbcMaxSecondsNotImproving limit \endlink
-  inline bool setMaxSecondsNotImproving(double value) {
+  inline bool setMaxSecondsNotImproving(double value)
+  {
     return setDblParam(CbcMaxSecondsNotImproving, value);
   }
 
   /// Get the \link CbcModel::CbcMaxSecondsNotImproving limit \endlink
-  inline double getMaxSecondsNotImproving() const {
+  inline double getMaxSecondsNotImproving() const
+  {
     return getDblParam(CbcMaxSecondsNotImproving);
   }
 
   /// Set the \link CbcModel::CbcMaxSolutions limit \endlink
-  inline bool setMaxSolutions(int value) {
+  inline bool setMaxSolutions(int value)
+  {
     return setIntParam(CbcMaxNumSol, value);
   }
 
@@ -695,7 +701,7 @@ public:
   //  For some problems with integer and continuous variables, rounding can
   //  increase the infeasibilities, but it can make sense if all variables
   //  are integral. Default is false.
-  void setRoundIntegerVariables( bool round_ );
+  void setRoundIntegerVariables(bool round_);
 
   /** Set the
         \link CbcModel::CbcMaxNumSol maximum number of solutions \endlink
@@ -749,7 +755,9 @@ public:
 
   /// Get last time when a better feasible solution was found
   inline double lastTimeImprovingFeasSol() const
-  { return lastTimeImprovingFeasSol_;};
+  {
+    return lastTimeImprovingFeasSol_;
+  };
 
   /** Set the
       \link CbcModel::CbcIntegerTolerance integrality tolerance \endlink
@@ -1341,13 +1349,16 @@ public:
   /// Get objective function sense (1 for min (default), -1 for max)
   inline double getObjSense() const
   {
-    //assert (dblParam_[CbcOptimizationDirection]== solver_->getObjSense());
+    // assert (dblParam_[CbcOptimizationDirection]== solver_->getObjSense());
     return dblParam_[CbcOptimizationDirection];
   }
   /// For getting rid of many getObjSense()'s
   /// When known to be minimization
   inline double getObjSenseInCbc() const
-  { assert (getObjSense()==1.0);return 1.0;}
+  {
+    assert(getObjSense() == 1.0);
+    return 1.0;
+  }
 
   /// Return true if variable is continuous
   inline bool isContinuous(int colIndex) const
@@ -1470,14 +1481,14 @@ public:
     const double *solution);
   /// Check if a solution is really valid e.g. lazy constraints
   /// Returns true if ok or normal cuts (i.e. no atSolution ones)
-  bool reallyValid(OsiCuts * existingCuts=NULL);
+  bool reallyValid(OsiCuts *existingCuts = NULL);
 
   /** Call this to really test if a valid solution can be feasible
         Solution is number columns in size.
         If fixVariables true then bounds of continuous solver updated.
         Returns objective value (worse than cutoff if not feasible)
         Previously computed objective value is now passed in (in case user does not do solve)
-	virtual so user can override
+        virtual so user can override
     */
   virtual double checkSolution(double cutoff, double *solution,
     int fixVariables, double originalObjValue);
@@ -1540,22 +1551,21 @@ public:
   /// Return true if model flipped to make minimize (for printing)
   inline bool modelFlipped() const
   {
-    return (moreSpecialOptions2_&67108864)!=0;
+    return (moreSpecialOptions2_ & 67108864) != 0;
   }
   /// Return objective function value with sign corrected
   inline double trueObjValue(double value) const
   {
-    return (moreSpecialOptions2_&67108864)==0 ? value : -value;
+    return (moreSpecialOptions2_ & 67108864) == 0 ? value : -value;
   }
   inline double trueBestObjValue() const
   {
-    return (moreSpecialOptions2_&67108864)==0 ? bestObjective_ : -bestObjective_;
+    return (moreSpecialOptions2_ & 67108864) == 0 ? bestObjective_ : -bestObjective_;
   }
   /// Return cutoff value with sign corrected
   inline double trueCutoff() const
   {
-    return (moreSpecialOptions2_&67108864)==0 ?
-      dblParam_[CbcCurrentCutoff] : -dblParam_[CbcCurrentCutoff]; 
+    return (moreSpecialOptions2_ & 67108864) == 0 ? dblParam_[CbcCurrentCutoff] : -dblParam_[CbcCurrentCutoff];
   }
 
   /// Get current objective function value
@@ -1920,7 +1930,7 @@ public:
     return numberCutGenerators_;
   }
   /// Set the number of cut generators
-  inline void setNumberCutGenerators(int value) 
+  inline void setNumberCutGenerators(int value)
   {
     numberCutGenerators_ = value;
   }
@@ -1929,12 +1939,12 @@ public:
   {
     return generator_;
   }
-  ///Get the specified cut generator
+  /// Get the specified cut generator
   inline CbcCutGenerator *cutGenerator(int i) const
   {
     return generator_[i];
   }
-  ///Get the specified cut generator before any changes
+  /// Get the specified cut generator before any changes
   inline CbcCutGenerator *virginCutGenerator(int i) const
   {
     return virginGenerator_[i];
@@ -1952,6 +1962,8 @@ public:
     bool normal = true, bool atSolution = false,
     bool infeasible = false, int howOftenInSub = -100,
     int whatDepth = -1, int whatDepthInSub = -1);
+  /// Clear all installed cut generators
+  void clearCutGenerators();
   //@}
   /** \name Strategy and sub models
 
@@ -1982,7 +1994,8 @@ public:
     parentModel_ = &parentModel;
   }
   /// See if in sub tree
-  inline bool inSmallBranchAndBound() const {
+  inline bool inSmallBranchAndBound() const
+  {
     return (specialOptions_ & 2048) != 0 && parentModel_;
   }
   //@}
@@ -1997,7 +2010,7 @@ public:
     int before = -1);
   /// Run heuristic and track execution time and stats
   int runHeuristic(CbcHeuristic *heuristic, double &heuristicValue, double *newSolution);
-  ///Get the specified heuristic
+  /// Get the specified heuristic
   inline CbcHeuristic *heuristic(int i) const
   {
     return heuristic_[i];
@@ -2180,13 +2193,13 @@ public:
         18 bit (262144) - donor CbcModel
         19 bit (524288) - recipient CbcModel
         20 bit (1048576) - waiting for sub model to return
-	22 bit (4194304) - do not initialize random seed in solver (user has)
-	23 bit (8388608) - leave solver_ with cuts
-	24 bit (16777216) - just get feasible if no cutoff
-	25 bit (33554432) - feasibility pump after root cuts
-	26 bit (67108864) - child model but going for complete search
-	27 bit (134217728) - extra extra options
-	28 bit (268435456) - more of above2
+        22 bit (4194304) - do not initialize random seed in solver (user has)
+        23 bit (8388608) - leave solver_ with cuts
+        24 bit (16777216) - just get feasible if no cutoff
+        25 bit (33554432) - feasibility pump after root cuts
+        26 bit (67108864) - child model but going for complete search
+        27 bit (134217728) - extra extra options
+        28 bit (268435456) - more of above2
     */
   inline void setSpecialOptions(int value)
   {
@@ -2233,8 +2246,8 @@ public:
     return (specialOptions_ & 16) == 0;
   }
   /** Says if model is sitting there waiting for mini branch and bound to finish
-	This is because an event handler may only have access to parent model in
-	mini branch and bound
+        This is because an event handler may only have access to parent model in
+        mini branch and bound
     */
   inline bool waitingForMiniBranchAndBound() const
   {
@@ -2242,26 +2255,26 @@ public:
   }
   /** Set more special options
         at present bottom 6 bits used for shadow price mode
-	(but if bottom 3 bits are zero next 3 can be used for stuff)
+        (but if bottom 3 bits are zero next 3 can be used for stuff)
         1024 for experimental hotstart
         2048,4096 breaking out of cuts
         8192 slowly increase minimum drop
         16384 gomory
-	32768 more heuristics in sub trees
-	65536 no cuts in preprocessing
+        32768 more heuristics in sub trees
+        65536 no cuts in preprocessing
         18 bit (262144) - Perturb fathom nodes
         19 bit (524288) - No limit on fathom nodes
         20 bit (1048576) - Reduce sum of infeasibilities before cuts
         21 bit (2097152) - Reduce sum of infeasibilities after cuts
-	22 bit (4194304) - Conflict analysis
-	23 bit (8388608) - Conflict analysis - temporary bit
-	24 bit (16777216) - Add cutoff as LP constraint (out)
-	25 bit (33554432) - diving/reordering
-	26 bit (67108864) - load global cuts from file
-	27 bit (134217728) - append binding global cuts to file
-	28 bit (268435456) - idiot branching
+        22 bit (4194304) - Conflict analysis
+        23 bit (8388608) - Conflict analysis - temporary bit
+        24 bit (16777216) - Add cutoff as LP constraint (out)
+        25 bit (33554432) - diving/reordering
+        26 bit (67108864) - load global cuts from file
+        27 bit (134217728) - append binding global cuts to file
+        28 bit (268435456) - idiot branching
         29 bit (536870912) - don't make fake objective
-	30 bit (1073741824) - Funny SOS or similar - be careful
+        30 bit (1073741824) - Funny SOS or similar - be careful
     */
   inline void setMoreSpecialOptions(int value)
   {
@@ -2273,31 +2286,31 @@ public:
     return moreSpecialOptions_;
   }
   /** Set more more special options
-	0 bit (1) - find switching variables
-	1 bit (2) - using fake objective until solution
-	2 bit (4) - switching variables exist
-	3 bit (8) - skip most of setBestSolution checks
-	4 bit (16) - very lightweight preprocessing in smallB&B
-	5 bit (32) - event handler needs to be cloned when parallel
-	6 bit (64) - testing - use probing to make cliques
-	7/8 bit (128) - try orbital branching (if nauty)
-	9 bit (512) - branching on objective (later)
-	10 bit (1024) - branching on constraints (later)
-	11/12 bit 2048 - intermittent cuts
-	13/14 bit 8192 - go to bitter end in strong branching (first time)
-	15 bit 32768 - take care of very very small values for Integer/SOS variables
-	16 bit 65536 - lazy constraints
-        17 bit 131072 - fairly simple orbital 
-        18 bit 262144 - some statistics for fairly simple orbital 
- 	19 bit 524288 - freeze problem at root cuts
- 	20 bit 1048576 - use ranging in CbcNode
-	21 bit 2097152 - analyze changed priorities but were equal before
-	22 bit 4194304 - ignore cutoff increment in multiple root solvers
-	23 bit (8388608) - no crunch
-	25 bit 33554432 - also 26,27 lagrangean cuts
-	28 bit 268435456 - alternative lagrangean cuts
-	29 bit 536870912 - one shot of less useful cuts
-	30 bit (1073741824) - Just make orbital into global cuts
+        0 bit (1) - find switching variables
+        1 bit (2) - using fake objective until solution
+        2 bit (4) - switching variables exist
+        3 bit (8) - skip most of setBestSolution checks
+        4 bit (16) - very lightweight preprocessing in smallB&B
+        5 bit (32) - event handler needs to be cloned when parallel
+        6 bit (64) - testing - use probing to make cliques
+        7/8 bit (128) - try orbital branching (if nauty)
+        9 bit (512) - branching on objective (later)
+        10 bit (1024) - branching on constraints (later)
+        11/12 bit 2048 - intermittent cuts
+        13/14 bit 8192 - go to bitter end in strong branching (first time)
+        15 bit 32768 - take care of very very small values for Integer/SOS variables
+        16 bit 65536 - lazy constraints
+        17 bit 131072 - fairly simple orbital
+        18 bit 262144 - some statistics for fairly simple orbital
+        19 bit 524288 - freeze problem at root cuts
+        20 bit 1048576 - use ranging in CbcNode
+        21 bit 2097152 - analyze changed priorities but were equal before
+        22 bit 4194304 - ignore cutoff increment in multiple root solvers
+        23 bit (8388608) - no crunch
+        25 bit 33554432 - also 26,27 lagrangean cuts
+        28 bit 268435456 - alternative lagrangean cuts
+        29 bit 536870912 - one shot of less useful cuts
+        30 bit (1073741824) - Just make orbital into global cuts
     */
   inline void setMoreSpecialOptions2(int value)
   {
@@ -2444,10 +2457,10 @@ public:
   /// Clears out as much as possible (except solver)
   void gutsOfDestructor();
   /** Clears out enough to reset CbcModel as if no branch and bound done
-     */
+   */
   void gutsOfDestructor2();
   /** Clears out enough to reset CbcModel cutoff etc
-     */
+   */
   void resetModel();
   /** Most of copy constructor
         mode - 0 copy but don't delete before
@@ -2556,7 +2569,7 @@ public:
   void moveToModel(CbcModel *baseModel, int mode);
   /// Split up nodes
   int splitModel(int numberModels, CbcModel **model,
-		 int numberNodes,CbcNode ** nodes = NULL);
+    int numberNodes, CbcNode **nodes = NULL);
   /// Start threads
   void startSplitModel(int numberIterations);
   /// Merge models
@@ -2749,7 +2762,7 @@ public:
   }
 #endif
   /// Delete a node and possibly null out currentNode_
-  void deleteNode(CbcNode * node);
+  void deleteNode(CbcNode *node);
   /// Get a pointer to probing info
   inline CglTreeProbingInfo *probingInfo() const
   {
@@ -2922,18 +2935,18 @@ public:
 
   /** if original column names will be preserved in preprocessed problem
    */
-  void setKeepNamesPreproc( bool _keep ) 
+  void setKeepNamesPreproc(bool _keep)
   {
     this->keepNamesPreproc = _keep;
   }
 
-  bool getKeepNamesPreproc() const 
+  bool getKeepNamesPreproc() const
   {
     return keepNamesPreproc;
   }
 
-  /** may be safer to use this overload method: c++ string libraries 
-     * implementation may not be binary compatible */
+  /** may be safer to use this overload method: c++ string libraries
+   * implementation may not be binary compatible */
   void setMIPStart(int count, const char **colNames, const double colValues[]);
 
   const std::vector< std::pair< std::string, double > > &getMIPStart()
@@ -3188,9 +3201,9 @@ private:
         18 bit (262144) - donor CbcModel
         19 bit (524288) - recipient CbcModel
         20 bit (1048576) - waiting for sub model to return
-	22 bit (4194304) - do not initialize random seed in solver (user has)
-	23 bit (8388608) - leave solver_ with cuts
-	24 bit (16777216) - just get feasible if no cutoff
+        22 bit (4194304) - do not initialize random seed in solver (user has)
+        23 bit (8388608) - leave solver_ with cuts
+        24 bit (16777216) - just get feasible if no cutoff
     */
   int specialOptions_;
   /** More special options
@@ -3199,8 +3212,8 @@ private:
         2048,4096 breaking out of cuts
         8192 slowly increase minimum drop
         16384 gomory
-	32768 more heuristics in sub trees
-	65536 no cuts in preprocessing
+        32768 more heuristics in sub trees
+        65536 no cuts in preprocessing
         18 bit (262144) - Perturb fathom nodes
         19 bit (524288) - No limit on fathom nodes
         20 bit (1048576) - Reduce sum of infeasibilities before cuts
@@ -3208,28 +3221,28 @@ private:
     */
   int moreSpecialOptions_;
   /** More more special options
-	0 bit (1) - find switching variables
-	1 bit (2) - using fake objective until solution
-	2 bit (4) - switching variables exist
-	3 bit (8) - skip most of setBestSolution checks
-	4 bit (16) - very lightweight preprocessing in smallB&B
-	5 bit (32) - event handler needs to be cloned when parallel
-	6 bit (64) - testing - use probing to make cliques
-	7/8 bit (128) - try orbital branching (if nauty)
-	9 bit (512) - branching on objective (later)
-	10 bit (1024) - branching on constraints (later)
-	11/12 bit 2048 - intermittent cuts
-	13/14 bit 8192 - go to bitter end in strong branching (first time)
-	15 bit 32768 - take care of very very small values for Integer/SOS variables
-	16 bit 65536 - lazy constraints
-        17 bit 131072 - fairly simple orbital 
-        18 bit 262144 - some statistics for fairly simple orbital 
- 	19 bit 524288 - freeze problem at root cuts
- 	20 bit 1048576 - use ranging in CbcNode
-	21 bit 2097152 - analyze changed priorities but were equal before
-	22 bit 4194304 - ignore cutoff increment in multiple root solvers
-	23 bit (8388608) - no crunch
-	24 bit (67108864) - model has been flipped
+        0 bit (1) - find switching variables
+        1 bit (2) - using fake objective until solution
+        2 bit (4) - switching variables exist
+        3 bit (8) - skip most of setBestSolution checks
+        4 bit (16) - very lightweight preprocessing in smallB&B
+        5 bit (32) - event handler needs to be cloned when parallel
+        6 bit (64) - testing - use probing to make cliques
+        7/8 bit (128) - try orbital branching (if nauty)
+        9 bit (512) - branching on objective (later)
+        10 bit (1024) - branching on constraints (later)
+        11/12 bit 2048 - intermittent cuts
+        13/14 bit 8192 - go to bitter end in strong branching (first time)
+        15 bit 32768 - take care of very very small values for Integer/SOS variables
+        16 bit 65536 - lazy constraints
+        17 bit 131072 - fairly simple orbital
+        18 bit 262144 - some statistics for fairly simple orbital
+        19 bit 524288 - freeze problem at root cuts
+        20 bit 1048576 - use ranging in CbcNode
+        21 bit 2097152 - analyze changed priorities but were equal before
+        22 bit 4194304 - ignore cutoff increment in multiple root solvers
+        23 bit (8388608) - no crunch
+        24 bit (67108864) - model has been flipped
     */
   int moreSpecialOptions2_;
   /// User node comparison function
@@ -3356,7 +3369,7 @@ private:
 #else
   CbcEventHandler *eventHandler_;
 #endif
-#ifdef CBC_PROBE_10 
+#ifdef CBC_PROBE_10
   /// Pointer for depth 10 probing etc
   void *depth10Probing_;
 #endif
@@ -3395,7 +3408,7 @@ private:
     */
   double continuousObjective_;
   /** Value of objective before root node cuts added
-    */
+   */
   double originalContinuousObjective_;
   /// Number of infeasibilities at continuous
   int continuousInfeasibilities_;
@@ -3452,15 +3465,15 @@ private:
   /// Strategy worked out - mainly at root node
   int searchStrategy_;
   /** Strategy for strong branching
-	0 - normal
-	when to do all fractional
-	1 - root node
-	2 - depth less than modifier
-	4 - if objective == best possible
-	6 - as 2+4 
-	when to do all including satisfied
-	10 - root node etc.
-	If >=100 then do when depth <= strategy/100 (otherwise 5)
+        0 - normal
+        when to do all fractional
+        1 - root node
+        2 - depth less than modifier
+        4 - if objective == best possible
+        6 - as 2+4
+        when to do all including satisfied
+        10 - root node etc.
+        If >=100 then do when depth <= strategy/100 (otherwise 5)
      */
   int strongStrategy_;
   /// Number of iterations in strong branching
@@ -3508,7 +3521,7 @@ private:
   /// Number of global cuts on entry to a node
   int numberGlobalCutsIn_;
 
-  // if values of integer variables should be rounded before saving, 
+  // if values of integer variables should be rounded before saving,
   // default false
   bool roundIntVars_;
 
@@ -3528,26 +3541,26 @@ class OsiClpSolverInterface;
 // For uniform setting of cut and heuristic options
 CBCLIB_EXPORT
 void setCutAndHeuristicOptions(CbcModel &model);
-  /// Deal with preprocessing mode
-  inline void setPreProcessingMode(OsiSolverInterface * solver,int processMode)
-  {
-    OsiClpSolverInterface *osiclp = getClpSolver(solver);
-    assert (osiclp);
-    osiclp->setPreProcessingMode(processMode);
-  }
+/// Deal with preprocessing mode
+inline void setPreProcessingMode(OsiSolverInterface *solver, int processMode)
+{
+  OsiClpSolverInterface *osiclp = getClpSolver(solver);
+  assert(osiclp);
+  osiclp->setPreProcessingMode(processMode);
+}
 /**
    A terse way of doing common types of solves.
    Set any extra options in cbcModel e.g. maximum nodes.
    cbcModel should not have any solver - but can have cut generators and heuristics
-   options - 
+   options -
    0 2 bit cuts - 0 off, 1 root + probing, 2 normal, 3
    2 2 heuristics - 0 off, 1 normal, 2, 3
    4 2 preprocessing - 0 off, 1 very lightweight, 2 normal, 3
    6 2 solution in if 1
    return code ?
  */
-int clpBranchAndCut(CbcModel * cbcModel, ClpSimplex * clpModel,
-		    unsigned int options=5);
-int clpBranchAndCut(CbcModel * cbcModel, OsiClpSolverInterface * solver,
-		    unsigned int options=5);
+int clpBranchAndCut(CbcModel *cbcModel, ClpSimplex *clpModel,
+  unsigned int options = 5);
+int clpBranchAndCut(CbcModel *cbcModel, OsiClpSolverInterface *solver,
+  unsigned int options = 5);
 #endif

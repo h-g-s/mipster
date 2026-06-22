@@ -20,7 +20,7 @@ namespace {
 inline void set_openblas_threads(int n)
 {
   typedef void (*fn_t)(int);
-  static fn_t fn = reinterpret_cast<fn_t>(dlsym(RTLD_DEFAULT, "openblas_set_num_threads"));
+  static fn_t fn = reinterpret_cast< fn_t >(dlsym(RTLD_DEFAULT, "openblas_set_num_threads"));
   if (fn)
     fn(n);
 }
@@ -1205,8 +1205,9 @@ void CbcModel::saveModel(OsiSolverInterface *saveSolver,
         const double *optSol = debugger
           ? debugger->optimalSolution()
           : (!saveSolver->getRowCutDebuggerAlways() && debugSolution
-                && debugNumberColumns == saveSolver->getNumCols()
-               ? debugSolution : nullptr);
+                  && debugNumberColumns == saveSolver->getNumCols()
+                ? debugSolution
+                : nullptr);
         if (optSol) {
           const double *newLB = saveSolver->getColLower();
           const double *newUB = saveSolver->getColUpper();
@@ -1216,8 +1217,8 @@ void CbcModel::saveModel(OsiSolverInterface *saveSolver,
             if (newLB[col] > sv + 0.5 || newUB[col] < sv - 0.5) {
               printf("reducedCostFix BAD FIXING: col %d (%s)"
                      " bounds=[%g,%g] but optimal has %g\n",
-                     col, saveSolver->getColName(col).c_str(),
-                     newLB[col], newUB[col], sv);
+                col, saveSolver->getColName(col).c_str(),
+                newLB[col], newUB[col], sv);
             }
           }
         }
@@ -4733,8 +4734,9 @@ void CbcModel::branchAndBound(int doStatistics)
             const double *optSol = debugger
               ? debugger->optimalSolution()
               : (!saveSolver->getRowCutDebuggerAlways() && debugSolution
-                    && debugNumberColumns == saveSolver->getNumCols()
-                   ? debugSolution : nullptr);
+                      && debugNumberColumns == saveSolver->getNumCols()
+                    ? debugSolution
+                    : nullptr);
             if (optSol) {
               const double *newLB = saveSolver->getColLower();
               const double *newUB = saveSolver->getColUpper();
@@ -4744,8 +4746,8 @@ void CbcModel::branchAndBound(int doStatistics)
                 if (newLB[col] > sv + 0.5 || newUB[col] < sv - 0.5) {
                   printf("reducedCostFix BAD FIXING: col %d (%s)"
                          " bounds=[%g,%g] but optimal has %g\n",
-                         col, saveSolver->getColName(col).c_str(),
-                         newLB[col], newUB[col], sv);
+                    col, saveSolver->getColName(col).c_str(),
+                    newLB[col], newUB[col], sv);
                 }
               }
             }
@@ -5483,7 +5485,7 @@ void CbcModel::branchAndBound(int doStatistics)
   // Print heuristics summary
   if (printHeuristicsSummary_) {
     // Collect heuristics that ran at least once
-    std::vector<CbcHeuristic *> ran;
+    std::vector< CbcHeuristic * > ran;
     bool anySubMIP = false;
     for (int i = 0; i < numberHeuristics_; i++) {
       if (heuristic_[i]->numExecutions() > 0) {
@@ -5494,7 +5496,8 @@ void CbcModel::branchAndBound(int doStatistics)
     }
     if (!ran.empty()) {
       FILE *fp = handler_->filePointer();
-      if (!fp) fp = stdout;
+      if (!fp)
+        fp = stdout;
       const bool u8 = CbcOutput::useUtf8();
       const bool compact = CbcOutput::useCompact();
 
@@ -5503,15 +5506,15 @@ void CbcModel::branchAndBound(int doStatistics)
       for (CbcHeuristic *h : ran)
         nameW = std::max(nameW, (int)std::strlen(h->heuristicName()));
 
-      std::vector<CoinTable::Col> cols = {
-        { "Heuristic",  nameW, /*leftAlign=*/true },
-        { "Calls",      5 },
-        { "Sols",       4 },
-        { "Time(s)",    7 },
-        { "MinDep",     6 },
-        { "MaxDep",     6 },
-        { "Infeas",     6 },
-        { "IterLim",    7 },
+      std::vector< CoinTable::Col > cols = {
+        { "Heuristic", nameW, /*leftAlign=*/true },
+        { "Calls", 5 },
+        { "Sols", 4 },
+        { "Time(s)", 7 },
+        { "MinDep", 6 },
+        { "MaxDep", 6 },
+        { "Infeas", 6 },
+        { "IterLim", 7 },
       };
       if (anySubMIP)
         cols.push_back({ "SubMIP nodes", 12 });
@@ -6876,7 +6879,8 @@ CbcModel::CbcModel(const CbcModel &rhs, bool cloneHandler)
   else
     branchingMethod_ = NULL;
   branchingRanker_ = rhs.branchingRanker_
-    ? new CbcBranchingRanker(*rhs.branchingRanker_) : NULL;
+    ? new CbcBranchingRanker(*rhs.branchingRanker_)
+    : NULL;
   if (rhs.cutModifier_)
     cutModifier_ = rhs.cutModifier_->clone();
   else
@@ -7259,7 +7263,8 @@ CbcModel &CbcModel::operator=(const CbcModel &rhs)
       branchingMethod_ = NULL;
     delete branchingRanker_;
     branchingRanker_ = rhs.branchingRanker_
-      ? new CbcBranchingRanker(*rhs.branchingRanker_) : NULL;
+      ? new CbcBranchingRanker(*rhs.branchingRanker_)
+      : NULL;
     if (rhs.cutModifier_)
       cutModifier_ = rhs.cutModifier_->clone();
     else
@@ -7684,7 +7689,8 @@ void CbcModel::gutsOfCopy(const CbcModel &rhs, int mode)
   else
     branchingMethod_ = NULL;
   branchingRanker_ = rhs.branchingRanker_
-    ? new CbcBranchingRanker(*rhs.branchingRanker_) : NULL;
+    ? new CbcBranchingRanker(*rhs.branchingRanker_)
+    : NULL;
   messageHandler()->setLogLevel(rhs.messageHandler()->logLevel());
   whenCuts_ = rhs.whenCuts_;
 #ifdef CBC_PROBE_10
@@ -7855,6 +7861,20 @@ void CbcModel::setHowOftenGlobalScan(int number)
     howOftenGlobalScan_ = number;
 }
 
+// Clear all installed cut generators
+void CbcModel::clearCutGenerators()
+{
+  for (int i = 0; i < numberCutGenerators_; i++) {
+    delete generator_[i];
+    delete virginGenerator_[i];
+  }
+  delete[] generator_;
+  delete[] virginGenerator_;
+  generator_ = NULL;
+  virginGenerator_ = NULL;
+  numberCutGenerators_ = 0;
+}
+
 // Add one generator
 void CbcModel::addCutGenerator(CglCutGenerator *generator, int howOften,
   const char *name, bool normal, bool atSolution,
@@ -7917,7 +7937,7 @@ int CbcModel::runHeuristic(CbcHeuristic *heuristic, double &heuristicValue, doub
   double startTime = getCurrentSeconds();
   int numInfeasBefore = heuristic->numInfeasible();
   int numIterBefore = heuristic->numIterationLimit();
-  
+
   int result = heuristic->solution(heuristicValue, newSolution);
 
   double duration = getCurrentSeconds() - startTime;
@@ -9386,7 +9406,8 @@ bool CbcModel::solveWithCuts(OsiCuts &cuts, int numberTries, CbcNode *node)
       for (int i = 0; i < numberIntegers_; i++) {
         double val = solution[integerVariable_[i]];
         double frac = val - std::floor(val);
-        if (frac > 0.5) frac = 1.0 - frac;
+        if (frac > 0.5)
+          frac = 1.0 - frac;
         if (frac > intTol) {
           nFrac++;
           suminf += frac;
@@ -10152,16 +10173,16 @@ bool CbcModel::solveWithCuts(OsiCuts &cuts, int numberTries, CbcNode *node)
             }
             nAdded = nTotal;
           } else {
-            std::vector<std::pair<double, int>> scored(nTotal);
+            std::vector< std::pair< double, int > > scored(nTotal);
             const double *sol = solver_->getColSolution();
             for (int i = 0; i < nTotal; i++) {
               const OsiRowCut &c = cuts.rowCut(i);
               double lhs = 0.0;
               for (int k = 0; k < c.row().getNumElements(); k++)
                 lhs += c.row().getElements()[k] * sol[c.row().getIndices()[k]];
-              scored[i] = {(lhs - c.ub()) / c.row().getNumElements(), i};
+              scored[i] = { (lhs - c.ub()) / c.row().getNumElements(), i };
             }
-            std::sort(scored.begin(), scored.end(), [](const std::pair<double,int> &a, const std::pair<double,int> &b) { return a.first > b.first; });
+            std::sort(scored.begin(), scored.end(), [](const std::pair< double, int > &a, const std::pair< double, int > &b) { return a.first > b.first; });
             nAdded = std::min(nTotal, maxCuts);
             for (int i = 0; i < nAdded; i++) {
               solver_->applyRowCuts(1, &cuts.rowCut(scored[i].second));
@@ -10175,30 +10196,30 @@ bool CbcModel::solveWithCuts(OsiCuts &cuts, int numberTries, CbcNode *node)
               nAdded, (double)totalNz / nAdded, objBefore, objAfter);
         }
       } else {
-      int whereFrom = node ? 3 : 2;
-      for (int i = 0; i < numberHeuristics_; i++) {
-        // skip if can't run here
-        if (!heuristic_[i]->shouldHeurRun(whereFrom))
-          continue;
-        // see if heuristic will do anything
-        double saveValue = heuristicValue;
-        int ifSol = runHeuristic(heuristic_[i], heuristicValue, newSolution);
-        if (ifSol > 0) {
-          // better solution found
-          heuristic_[i]->incrementNumberSolutionsFound();
-          found = i;
-          incrementUsed(newSolution);
-          lastHeuristic_ = heuristic_[found];
+        int whereFrom = node ? 3 : 2;
+        for (int i = 0; i < numberHeuristics_; i++) {
+          // skip if can't run here
+          if (!heuristic_[i]->shouldHeurRun(whereFrom))
+            continue;
+          // see if heuristic will do anything
+          double saveValue = heuristicValue;
+          int ifSol = runHeuristic(heuristic_[i], heuristicValue, newSolution);
+          if (ifSol > 0) {
+            // better solution found
+            heuristic_[i]->incrementNumberSolutionsFound();
+            found = i;
+            incrementUsed(newSolution);
+            lastHeuristic_ = heuristic_[found];
 #ifdef HEURISTIC_INFORM
-          printf("HEUR %s where %d B\n", lastHeuristic_->heuristicName(),
-            whereFrom);
+            printf("HEUR %s where %d B\n", lastHeuristic_->heuristicName(),
+              whereFrom);
 #endif
-          setBestSolution(CBC_ROUNDING, heuristicValue, newSolution);
-          whereFrom |= 8; // say solution found
-        } else {
-          heuristicValue = saveValue;
+            setBestSolution(CBC_ROUNDING, heuristicValue, newSolution);
+            whereFrom |= 8; // say solution found
+          } else {
+            heuristicValue = saveValue;
+          }
         }
-      }
       } // end else (sequential path)
     }
     currentPassNumber_ = savePass;
@@ -11534,7 +11555,7 @@ int CbcModel::resolve(CbcNodeInfo *parent, int whereFrom, double *saveSolution,
     const OsiRowCutDebugger *debugger = solver_->getRowCutDebugger();
     if (debugger) {
       onOptimalPath = true;
-;
+      ;
       solver_->writeMpsNative("onopt.mps", NULL, NULL, 2);
       // but check cuts
       OsiSolverInterface *temp = solver_->clone();
@@ -15831,7 +15852,7 @@ int CbcModel::resolve(OsiSolverInterface *solver)
       const OsiRowCutDebugger *debugger = solver_->getRowCutDebugger();
       if (debugger) {
         onOptimalPath = true;
-;
+        ;
       }
     }
 #endif
@@ -15863,7 +15884,7 @@ int CbcModel::resolve(OsiSolverInterface *solver)
     if ((specialOptions_ & 1) != 0 && onOptimalPath) {
       const OsiRowCutDebugger *debugger = solver_->getRowCutDebugger();
       if (debugger && solver_->isProvenOptimal()) {
-;
+        ;
       } else {
         solver_->writeMpsNative("badSolve.mps", NULL, NULL, 2);
         printf("NOT on optimal path after resolve\n");
@@ -16383,7 +16404,7 @@ int CbcModel::chooseBranch(CbcNode *&newNode, int numberPassesLeft,
     const OsiRowCutDebugger *debugger = solver_->getRowCutDebugger();
     if (debugger) {
       onOptimalPath = true;
-;
+      ;
     }
   }
 #endif
@@ -16765,10 +16786,10 @@ int CbcModel::chooseBranch(CbcNode *&newNode, int numberPassesLeft,
   if (onOptimalPath) {
     const OsiRowCutDebugger *debugger = solver_->getRowCutDebugger();
     if (!debugger) {
-;
+      ;
       abort();
     } else {
-;
+      ;
       if (anyAction == -2) {
         printf("anyAction 2!!\n");
         abort();
@@ -17003,16 +17024,16 @@ void CbcModel::doHeuristicsAtRoot(int deleteHeuristicsAfterwards)
           }
           nAdded = nTotal;
         } else {
-          std::vector<std::pair<double, int>> scored(nTotal);
+          std::vector< std::pair< double, int > > scored(nTotal);
           const double *sol = solver_->getColSolution();
           for (int i = 0; i < nTotal; i++) {
             const OsiRowCut &c = cuts.rowCut(i);
             double lhs = 0.0;
             for (int k = 0; k < c.row().getNumElements(); k++)
               lhs += c.row().getElements()[k] * sol[c.row().getIndices()[k]];
-            scored[i] = {(lhs - c.ub()) / c.row().getNumElements(), i};
+            scored[i] = { (lhs - c.ub()) / c.row().getNumElements(), i };
           }
-          std::sort(scored.begin(), scored.end(), [](const std::pair<double,int> &a, const std::pair<double,int> &b) { return a.first > b.first; });
+          std::sort(scored.begin(), scored.end(), [](const std::pair< double, int > &a, const std::pair< double, int > &b) { return a.first > b.first; });
           nAdded = std::min(nTotal, maxCuts);
           for (int i = 0; i < nAdded; i++) {
             solver_->applyRowCuts(1, &cuts.rowCut(scored[i].second));
@@ -17762,7 +17783,7 @@ int CbcModel::doOneNode(CbcModel *baseModel, CbcNode *&node,
       const OsiRowCutDebugger *debugger = solver_->getRowCutDebugger();
       if (debugger) {
         onOptimalPath = true;
-;
+        ;
       }
     }
 

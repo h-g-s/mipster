@@ -40,8 +40,8 @@
 class CbcUser;
 class CbcStopNow;
 
-//#############################################################################
-//#############################################################################
+// #############################################################################
+// #############################################################################
 
 /*! \brief Top-level driver class for the CBC MIP solver.
 
@@ -188,7 +188,7 @@ public:
       \param info        AMPL interface data (NULL when not using AMPL)
       \return 0 on normal completion, non-zero if callback requests early exit
   */
-  int run(std::deque<std::string> inputQueue,
+  int run(std::deque< std::string > inputQueue,
     int callBack(CbcModel *currentSolver, int whereFrom) = nullptr,
     ampl_info *info = nullptr);
 
@@ -444,8 +444,8 @@ private:
   int *sosPriority_;
 
   // --- MIP start ---
-  std::vector<std::pair<std::string, double>> mipStart_;
-  std::vector<std::pair<std::string, double>> mipStartBefore_;
+  std::vector< std::pair< std::string, double > > mipStart_;
+  std::vector< std::pair< std::string, double > > mipStartBefore_;
   std::string mipStartFile_;
 
   // --- Knapsack expansion ---
@@ -460,8 +460,8 @@ private:
 
   // --- Names ---
   int lengthName_;
-  std::vector<std::string> rowNames_;
-  std::vector<std::string> columnNames_;
+  std::vector< std::string > rowNames_;
+  std::vector< std::string > columnNames_;
 
   // --- Debug ---
   double *debugValues_;
@@ -489,10 +489,10 @@ private:
   // (managed internally during run, not exposed)
 
   // --- Input queue copies ---
-  std::deque<std::string> saveInputQueue_;
+  std::deque< std::string > saveInputQueue_;
 
   /// Collected parameter-change messages (printed as a section before solve)
-  std::vector<std::string> paramChanges_;
+  std::vector< std::string > paramChanges_;
   //@}
 
   ///@name Private helpers
@@ -511,7 +511,7 @@ private:
       \param time1       CPU time reference (updated on success)
       \param totalTime   Accumulated time (updated on success)
   */
-  void importModel(std::deque<std::string> &inputQueue,
+  void importModel(std::deque< std::string > &inputQueue,
     OsiClpSolverInterface *clpSolver, ClpSimplex *lpSolver,
     double &time1, double &totalTime);
 
@@ -532,7 +532,7 @@ private:
       \param lpSolver      Current ClpSimplex
   */
   void writeSolution(int cbcParamCode,
-    std::deque<std::string> &inputQueue,
+    std::deque< std::string > &inputQueue,
     OsiClpSolverInterface *clpSolver, ClpSimplex *lpSolver);
 
   /** Apply the LP method to solve the current LP relaxation.
@@ -591,7 +591,8 @@ private:
     ampl_info *info,
     int &truncateColumns, int &truncateRows,
     bool &redoSOS, double *&truncatedRhsLower, double *&truncatedRhsUpper,
-    int *&newPriorities, bool integersOK, int numberOriginalColumns);
+    int *&newPriorities, bool integersOK, int numberOriginalColumns,
+    bool miplib);
 
   /** Run postprocessing after branch-and-bound and report results.
       Called at the end of the BAB action.
@@ -609,8 +610,8 @@ private:
   //@}
 };
 
-//#############################################################################
-//#############################################################################
+// #############################################################################
+// #############################################################################
 
 /*! \brief A class to allow the use of unknown user functionality
 
@@ -705,8 +706,8 @@ protected:
   //@}
 };
 
-//#############################################################################
-//#############################################################################
+// #############################################################################
+// #############################################################################
 
 /*! \brief Support the use of a call back class to decide whether to stop
 
@@ -761,15 +762,15 @@ private:
   //@}
 };
 
-//###########################################################################
-// Default no-op callback for CbcMain1 backward compatibility
-//###########################################################################
+// ###########################################################################
+//  Default no-op callback for CbcMain1 backward compatibility
+// ###########################################################################
 
 static int dummyCallback(CbcModel * /*model*/, int /*whereFrom*/) { return 0; }
 
-//#############################################################################
-// Backward-compatible free functions (delegate to CbcSolver internally)
-//#############################################################################
+// #############################################################################
+//  Backward-compatible free functions (delegate to CbcSolver internally)
+// #############################################################################
 
 /// Initialize default parameters (delegates to CbcSolver::initialize)
 CBCLIB_EXPORT
@@ -777,7 +778,7 @@ void CbcMain0(CbcModel &model, CbcParameters &parameters);
 
 /// Run solver with command queue (delegates to CbcSolver::run)
 CBCLIB_EXPORT
-int CbcMain1(std::deque<std::string> inputQueue, CbcModel &model,
+int CbcMain1(std::deque< std::string > inputQueue, CbcModel &model,
   CbcParameters &parameters,
   int callBack(CbcModel *currentSolver, int whereFrom) = dummyCallback,
   ampl_info *info = NULL);

@@ -8,6 +8,7 @@
 #include <vector>
 #include <algorithm>
 #include <cfloat>
+#include <typeinfo>
 #include <climits>
 #include "CoinPragma.hpp" 
 #include "CglPreProcess.hpp"
@@ -7785,8 +7786,8 @@ CglPreProcess::modified(OsiSolverInterface *model,
                 iBigPass, iPass, iPass + 1, numberPasses);
             } else {
               snprintf(buf, sizeof(buf),
-                "[Preproc pass %d.%d] Generator %d (minor pass %d/%d)",
-                iBigPass, iPass, iGenerator, iPass + 1, numberPasses);
+                "[Preproc pass %d.%d] Generator %d (%s) (minor pass %d/%d)",
+                iBigPass, iPass, iGenerator, typeid(*generator_[iGenerator]).name(), iPass + 1, numberPasses);
             }
             fprintf(fp, "  %s\n", buf);
             fflush(fp);
@@ -8637,7 +8638,9 @@ CglPreProcess::modified(OsiSolverInterface *model,
               break;
             }
           }
-          if (alreadyUsed)
+          bool isCliqueCut = (cliqueGen != NULL || bkCliqueGen != NULL);
+          bool keepCut = alreadyUsed || isCliqueCut;
+          if (!keepCut)
             continue;
           const int n = thisCut->row().getNumElements();
           if (constraints && n == 2 && thisCut->lb() == thisCut->ub())
