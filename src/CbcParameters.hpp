@@ -488,6 +488,12 @@ public:
     return parameters_[CbcParam::GLOBALCUTMINVIOLATION]->dblVal();
   }
 
+  /*! \brief Get the per-round NZ cut limit factor (-1 = disabled) */
+  inline double getPerRoundNzCutLimitFactor() const
+  {
+    return parameters_[CbcParam::PERROUNDNZCUTLIMITFACTOR]->dblVal();
+  }
+
   /*! \brief Codes to specify the assignment of branching priorities
 
       - BPOff: no priorities are passed to cbc

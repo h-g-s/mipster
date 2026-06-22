@@ -10200,6 +10200,7 @@ int CbcSolver::run(std::deque< std::string > inputQueue,
           babModel_->setCutPoolFilter(parameters.getCutPoolFilter() ? 1 : 0);
           babModel_->setCutPoolFilterMinCuts(parameters.getCutPoolFilterMinCuts());
           babModel_->setGlobalCutMinViolation(parameters.getGlobalCutMinViolation());
+          babModel_->setPerRoundNzCutLimitFactor(parameters.getPerRoundNzCutLimitFactor());
           // Do more strong branching if small
           // if (babModel_->getNumCols()<5000)
           // babModel_->setNumberStrong(20);

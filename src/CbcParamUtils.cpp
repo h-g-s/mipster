@@ -214,12 +214,20 @@ int pushCbcSolverDblParam(CoinParam &param)
       parameters->setTightenFactor(val);
       break;
    }
-     
+
+   // Parameters whose values are stored directly in the CoinParam object
+   // and read back via parameters_[code]->dblVal() — no separate field needed.
+   case CbcParam::RINSCLOSEMAXDIST:
+   case CbcParam::GLOBALCUTMINVIOLATION:
+   case CbcParam::LPTIMEFREQ:
+   case CbcParam::FPUMPTIMEFREQ:
+   case CbcParam::PERROUNDNZCUTLIMITFACTOR:
+     break;
    default: {
-      std::cerr << "pushCbcSolverDbl: no equivalent CbcParameters field for "
-                << "parameter code `" << cbcParamCode << "'." << std::endl;
-      retval = -1;
-      break;
+     std::cerr << "pushCbcSolverDbl: no equivalent CbcParameters field for "
+               << "parameter code `" << cbcParamCode << "'." << std::endl;
+     retval = -1;
+     break;
    }
   }
 

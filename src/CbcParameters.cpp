@@ -719,6 +719,7 @@ void CbcParameters::addCbcParams() {
   parameters_[CbcParam::CUTPOOLFILTER]->setTopic("Cuts");
   parameters_[CbcParam::CUTPOOLFILTERMINCUTS]->setTopic("Cuts");
   parameters_[CbcParam::GLOBALCUTMINVIOLATION]->setTopic("Cuts");
+  parameters_[CbcParam::PERROUNDNZCUTLIMITFACTOR]->setTopic("Cuts");
 
   // Integer params — ZeroHalf tuning (sub-topic of Cuts)
   for (int code : {CbcParam::ZEROHALFROWMAXFRACTIONALCOUNT,
@@ -842,6 +843,7 @@ void CbcParameters::setDefaults(int strategy) {
      parameters_[CbcParam::TIGHTENFACTOR]->setDefault(0.0);
      parameters_[CbcParam::RINSCLOSEMAXDIST]->setDefault(0.4);
      parameters_[CbcParam::GLOBALCUTMINVIOLATION]->setDefault(0.005);
+     parameters_[CbcParam::PERROUNDNZCUTLIMITFACTOR]->setDefault(-1.0);
      parameters_[CbcParam::LPTIMEFREQ]->setDefault(5.0);
      parameters_[CbcParam::FPUMPTIMEFREQ]->setDefault(5.0);
      parameters_[CbcParam::AGGREGATEMIXED]->setDefault(1);
@@ -2155,6 +2157,30 @@ void CbcParameters::addCbcSolverDblParams() {
       "multiple of the LP primal tolerance ~1e-7).\n"
       "Tighter values (e.g. 1e-3) can help when the tree is large and global "
       "cuts from early root passes are almost-satisfied.",
+      CoinParam::displayPriorityHigh);
+
+  parameters_[CbcParam::PERROUNDNZCUTLIMITFACTOR]->setup(
+      "perRoundNzCutLimit!Factor",
+      "Limit non-zeros added per cut round (factor × max(nz/10, 2n+100))",
+      -1.0, COIN_DBL_MAX,
+      "Controls the maximum number of non-zeros that cut rows may add to the "
+      "LP in each cut-generation round.  The budget is:\n"
+      "  budget = factor × max(currentNZ/10, 2×ncols + 100)\n"
+      "where currentNZ is the LP non-zero count and ncols is the column count "
+      "at the start of the round.\n"
+      "\n"
+      "The budget is applied in two stages:\n"
+      "  1. Global stored cuts are added first (best-scoring first) until the "
+      "budget is exhausted.  If global cuts alone fill the budget, cut "
+      "generators are skipped for this round.\n"
+      "  2. Generator cuts (after the optional pool filter) are scored by the "
+      "active ranking metric (-cutRankingMetric), sorted best-first, and "
+      "added greedily until the remaining budget is consumed.\n"
+      "\n"
+      "Set to -1 (default) to disable the limit (original behaviour).\n"
+      "A factor of 1.0 matches the budget already used by the global-cut "
+      "injection loop.  Values < 1.0 are more aggressive; values > 1.0 allow "
+      "larger rounds.",
       CoinParam::displayPriorityHigh);
 
   parameters_[CbcParam::LPTIMEFREQ]->setup(

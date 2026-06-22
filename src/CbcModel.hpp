@@ -991,6 +991,10 @@ public:
   inline double globalCutMinViolation() const { return globalCutMinViolation_; }
   /// Set global-pool cut minimum violation threshold
   inline void setGlobalCutMinViolation(double value) { globalCutMinViolation_ = value; }
+  /// Get per-round NZ budget factor (-1 = disabled)
+  inline double perRoundNzCutLimitFactor() const { return perRoundNzCutLimitFactor_; }
+  /// Set per-round NZ budget factor (-1 = disabled)
+  inline void setPerRoundNzCutLimitFactor(double value) { perRoundNzCutLimitFactor_ = value; }
   /** Return true if we want to do cuts
         If allowForTopOfTree zero then just does on multiples of depth
         if 1 then allows for doing at top of tree
@@ -3092,6 +3096,8 @@ private:
   int cutPoolFilterMinCuts_;
   /// Minimum LP violation for a global cut to be re-injected (default 0.005)
   double globalCutMinViolation_;
+  /// Per-round NZ budget factor: budget = factor×max(nz/10, 2n+100); -1 = disabled
+  double perRoundNzCutLimitFactor_;
   /// Per-generator cumulative cut counts at start of each root pass (for per-pass delta)
   std::vector< int > passGenCutsBase_;
   /// Hotstart solution

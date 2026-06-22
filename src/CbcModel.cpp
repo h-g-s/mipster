@@ -6124,7 +6124,7 @@ CbcModel::CbcModel()
   , cutPoolFilter_(1)
   , cutPoolFilterMinCuts_(50)
   , globalCutMinViolation_(0.005)
-  , hotstartSolution_(NULL)
+  , perRoundNzCutLimitFactor_(-1.0)
   , hotstartPriorities_(NULL)
   , numberHeuristicSolutions_(0)
   , numberNodes_(0)
@@ -6323,6 +6323,7 @@ CbcModel::CbcModel(const OsiSolverInterface &rhs)
   , cutPoolFilterMinCuts_(50)
   , hotstartPriorities_(NULL)
   , globalCutMinViolation_(0.005)
+  , perRoundNzCutLimitFactor_(-1.0)
   , numberHeuristicSolutions_(0)
   , numberNodes_(0)
   , lastNodeImprovingFeasSol_(-1)
@@ -6689,7 +6690,7 @@ CbcModel::CbcModel(const CbcModel &rhs, bool cloneHandler)
   , cutPoolFilter_(rhs.cutPoolFilter_)
   , cutPoolFilterMinCuts_(rhs.cutPoolFilterMinCuts_)
   , globalCutMinViolation_(rhs.globalCutMinViolation_)
-  , numberHeuristicSolutions_(rhs.numberHeuristicSolutions_)
+  , perRoundNzCutLimitFactor_(rhs.perRoundNzCutLimitFactor_)
   , numberNodes_(rhs.numberNodes_)
   , lastNodeImprovingFeasSol_(rhs.lastNodeImprovingFeasSol_)
   , lastTimeImprovingFeasSol_(rhs.lastTimeImprovingFeasSol_)
@@ -7095,6 +7096,7 @@ CbcModel &CbcModel::operator=(const CbcModel &rhs)
     cutPoolFilter_ = rhs.cutPoolFilter_;
     cutPoolFilterMinCuts_ = rhs.cutPoolFilterMinCuts_;
     globalCutMinViolation_ = rhs.globalCutMinViolation_;
+    perRoundNzCutLimitFactor_ = rhs.perRoundNzCutLimitFactor_;
     numberHeuristicSolutions_ = rhs.numberHeuristicSolutions_;
     numberNodes_ = rhs.numberNodes_;
     lastNodeImprovingFeasSol_ = rhs.lastNodeImprovingFeasSol_;
@@ -7710,6 +7712,7 @@ void CbcModel::gutsOfCopy(const CbcModel &rhs, int mode)
   cutPoolFilter_ = rhs.cutPoolFilter_;
   cutPoolFilterMinCuts_ = rhs.cutPoolFilterMinCuts_;
   globalCutMinViolation_ = rhs.globalCutMinViolation_;
+  perRoundNzCutLimitFactor_ = rhs.perRoundNzCutLimitFactor_;
 #ifdef CBC_PROBE_10
   depth10Probing_ = NULL;
 #endif
@@ -9337,12 +9340,15 @@ bool CbcModel::solveWithCuts(OsiCuts &cuts, int numberTries, CbcNode *node)
       if (numberCuts) {
         // possibly extend whichGenerator
         resizeWhichGenerator(0, numberCuts);
-        // only add new cuts up to 10% of current elements
+        // only add new cuts up to the per-round NZ budget
         CoinBigIndex numberElements = solver_->getNumElements();
         int numberColumns = solver_->getNumCols();
-        CoinBigIndex maximumAdd = std::max(numberElements / 10,
-                                    static_cast< CoinBigIndex >(2 * numberColumns))
+        CoinBigIndex nzBase = std::max(numberElements / 10,
+                               static_cast< CoinBigIndex >(2 * numberColumns))
           + 100;
+        CoinBigIndex maximumAdd = (perRoundNzCutLimitFactor_ > 0.0)
+          ? (CoinBigIndex)(perRoundNzCutLimitFactor_ * static_cast< double >(nzBase))
+          : nzBase;
         double *violations = new double[numberCuts];
         int *which = new int[numberCuts];
         int numberPossible = 0;
@@ -9560,6 +9566,20 @@ bool CbcModel::solveWithCuts(OsiCuts &cuts, int numberTries, CbcNode *node)
         }
       }
     }
+    // If a per-round NZ budget is active, skip generators when global cuts
+    // already consumed the full budget.
+    bool skipGeneratorsNzBudget = false;
+    if (perRoundNzCutLimitFactor_ > 0.0 && feasible) {
+      CoinBigIndex currentNZ = solver_->getNumElements();
+      int ncols = solver_->getNumCols();
+      CoinBigIndex nzBase = std::max(currentNZ / 10,
+                             static_cast< CoinBigIndex >(2 * ncols)) + 100;
+      CoinBigIndex nzBudget = (CoinBigIndex)(perRoundNzCutLimitFactor_ * static_cast< double >(nzBase));
+      CoinBigIndex nzUsed = 0;
+      for (int gi = 0; gi < theseCuts.sizeRowCuts(); gi++)
+        nzUsed += theseCuts.rowCut(gi).row().getNumElements();
+      skipGeneratorsNzBudget = (nzUsed >= nzBudget);
+    }
     if ((!keepGoing || lazy) && feasible) {
       // Status for single pass of cut generation
       int status = 0;
@@ -9576,13 +9596,15 @@ bool CbcModel::solveWithCuts(OsiCuts &cuts, int numberTries, CbcNode *node)
             passGenCutsBase_[gi] = generator_[gi]->numberCutsInTotal();
         }
       }
-      if ((threadMode_ & 2) == 0 || numberNodes_) {
-        status = serialCuts(theseCuts, node, slackCuts, lastNumberCuts);
-      } else {
-        // do cuts independently
+      if (!skipGeneratorsNzBudget) {
+        if ((threadMode_ & 2) == 0 || numberNodes_) {
+          status = serialCuts(theseCuts, node, slackCuts, lastNumberCuts);
+        } else {
+          // do cuts independently
 #ifdef CBC_THREAD
-        status = parallelCuts(master, theseCuts, node, slackCuts, lastNumberCuts);
+          status = parallelCuts(master, theseCuts, node, slackCuts, lastNumberCuts);
 #endif
+        }
       }
       // Emit per-pass per-generator cut counts for the progress table (root only).
       if (!node) {
@@ -9711,6 +9733,63 @@ bool CbcModel::solveWithCuts(OsiCuts &cuts, int numberTries, CbcNode *node)
     // the round produced enough cuts to make filtering worthwhile.
     if (cutPoolFilter_ && theseCuts.sizeRowCuts() >= cutPoolFilterMinCuts_)
       filterCutsByBestPerVar(theseCuts, cbcColSolution_, getNumCols());
+    // Per-round NZ budget: if generator cuts pushed total NZ over budget,
+    // sort all row cuts by the active ranking metric and greedily trim.
+    if (perRoundNzCutLimitFactor_ > 0.0 && !skipGeneratorsNzBudget) {
+      int nRow = theseCuts.sizeRowCuts();
+      if (nRow > 0) {
+        CoinBigIndex curNZ = solver_->getNumElements();
+        int ncols = solver_->getNumCols();
+        CoinBigIndex nzBase2 = std::max(curNZ / 10,
+                               static_cast< CoinBigIndex >(2 * ncols)) + 100;
+        CoinBigIndex nzBudget2 = (CoinBigIndex)(perRoundNzCutLimitFactor_ * static_cast< double >(nzBase2));
+        CoinBigIndex totalNZ = 0;
+        for (int ci = 0; ci < nRow; ci++)
+          totalNZ += theseCuts.rowCut(ci).row().getNumElements();
+        if (totalNZ > nzBudget2) {
+          // Score all row cuts using the active ranking metric.
+          std::vector< std::pair< double, int > > scored(nRow);
+          for (int ci = 0; ci < nRow; ci++) {
+            const OsiRowCut &rc = theseCuts.rowCut(ci);
+            double viol = rc.violated(cbcColSolution_);
+            double score = viol;
+            if (cutRankingMetric_ == 1 && viol > -1e-9) {
+              const CoinPackedVector &row = rc.row();
+              int rnz = row.getNumElements();
+              if (rnz > 0) {
+                if (rc.ub() < 1e30) {
+                  score = CoinCutPool::rowCutFitness(row.getIndices(),
+                    row.getElements(), rnz, rc.ub(), cbcColSolution_);
+                } else {
+                  std::vector< double > negC(rnz);
+                  const double *ce = row.getElements();
+                  for (int k = 0; k < rnz; k++) negC[k] = -ce[k];
+                  score = CoinCutPool::rowCutFitness(row.getIndices(),
+                    negC.data(), rnz, -rc.lb(), cbcColSolution_);
+                }
+              }
+            }
+            scored[ci] = { score, ci };
+          }
+          std::sort(scored.begin(), scored.end(),
+            [](const std::pair< double, int > &a, const std::pair< double, int > &b) {
+              return a.first > b.first;
+            });
+          OsiCuts trimmed;
+          CoinBigIndex nzUsed2 = 0;
+          for (const auto &p : scored) {
+            int cnz = theseCuts.rowCut(p.second).row().getNumElements();
+            if (nzUsed2 + cnz <= nzBudget2) {
+              trimmed.insert(theseCuts.rowCut(p.second));
+              nzUsed2 += cnz;
+            }
+          }
+          for (int ci = 0; ci < theseCuts.sizeColCuts(); ci++)
+            trimmed.insert(theseCuts.colCut(ci));
+          theseCuts = trimmed;
+        }
+      }
+    }
     int numberColumnCuts = theseCuts.sizeColCuts();
     int numberRowCuts = theseCuts.sizeRowCuts();
     if (violated >= 0)
