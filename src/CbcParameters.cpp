@@ -2178,9 +2178,10 @@ void CbcParameters::addCbcSolverDblParams() {
       "added greedily until the remaining budget is consumed.\n"
       "\n"
       "Set to -1 (default) to disable the limit (original behaviour).\n"
-      "A factor of 1.0 matches the budget already used by the global-cut "
-      "injection loop.  Values < 1.0 are more aggressive; values > 1.0 allow "
-      "larger rounds.",
+      "A factor of 1.0 uses the same formula as the global-cut injection "
+      "budget, but now also trims generator cuts (which were previously "
+      "uncapped).  Values < 1.0 are more aggressive; values > 1.0 are "
+      "more permissive.",
       CoinParam::displayPriorityHigh);
 
   parameters_[CbcParam::LPTIMEFREQ]->setup(

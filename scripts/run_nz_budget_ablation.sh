@@ -17,7 +17,9 @@
 # ──────────────────────────────────────────────────────────────────────────────
 #  C0_baseline       : -perRoundNzCutLimitFactor -1  (disabled, default)
 #  C1_factor_2.0     : -perRoundNzCutLimitFactor 2.0 (permissive: 2× formula)
-#  C2_factor_1.0     : -perRoundNzCutLimitFactor 1.0 (matches old global-cuts default)
+#  C2_factor_1.0     : -perRoundNzCutLimitFactor 1.0 (same formula as old global-cuts
+#                       maximumAdd, but NOW also trims generator cuts — more restrictive
+#                       than old behaviour, which only limited stored global cuts)
 #  C3_factor_0.5     : -perRoundNzCutLimitFactor 0.5 (moderate trimming)
 #  C4_factor_0.2     : -perRoundNzCutLimitFactor 0.2 (aggressive trimming)
 # ──────────────────────────────────────────────────────────────────────────────
