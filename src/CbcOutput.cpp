@@ -1960,7 +1960,6 @@ void CbcRootHeurOutput::onEnd()
 static const int CG_W_PASS   = 4;
 static const int CG_W_ROWS   = 8;
 static const int CG_W_TIGHT  = 8;
-static const int CG_W_FRAC   = 6;
 static const int CG_W_OBJ    = 16;
 static const int CG_W_TIME   = 8;
 static const int CG_W_CUTS   = 45;
@@ -1968,13 +1967,12 @@ static const int CG_W_CUTS   = 45;
 static CoinTable makeCgProgTable(bool utf8, bool compact)
 {
   return CoinTable({
-    { "Pass",      CG_W_PASS   },
-    { "Rows",      CG_W_ROWS   },
-    { "Tight",     CG_W_TIGHT  },
-    { "Frac",      CG_W_FRAC   },
-    { "Objective", CG_W_OBJ    },
-    { "Time(s)",   CG_W_TIME   },
-    { "Cuts",      CG_W_CUTS,  /*leftAlign=*/true },
+    { "Pass",      CG_W_PASS  },
+    { "Rows",      CG_W_ROWS  },
+    { "Tight",     CG_W_TIGHT },
+    { "Cuts",      CG_W_CUTS, /*leftAlign=*/true },
+    { "Objective", CG_W_OBJ   },
+    { "Time(s)",   CG_W_TIME  },
   }, utf8, /*indent=*/2, compact);
 }
 
@@ -2027,7 +2025,7 @@ void CbcCutGenOutput::resetForRestart(const char *title)
   title_ = title ? title : "Cut generation (root node, part 2)";
 }
 
-void CbcCutGenOutput::onPass(int pass, int rows, int tight, int frac, double /*suminf*/, double obj, double t)
+void CbcCutGenOutput::onPass(int pass, int rows, int tight, int /*frac*/, double /*suminf*/, double obj, double t)
 {
   if (state_ != State::Started) return;
 
@@ -2041,7 +2039,7 @@ void CbcCutGenOutput::onPass(int pass, int rows, int tight, int frac, double /*s
     flushPendingRow();
 
   // Buffer this row; will be flushed when onPassCuts() arrives (or on next pass / close).
-  pending_ = { pass, rows, tight, frac, obj, t, true };
+  pending_ = { pass, rows, tight, obj, t, true };
 }
 
 void CbcCutGenOutput::flushPendingRow(const std::string &cutsStr)
@@ -2058,14 +2056,13 @@ void CbcCutGenOutput::flushPendingRow(const std::string &cutsStr)
   char cutsBuf[CG_W_CUTS + 1];
   std::snprintf(cutsBuf, sizeof(cutsBuf), "%-*s", CG_W_CUTS, cutsStr.c_str());
 
-  fprintf(fp_, "  %*d%s%*d%s%*d%s%*d%s%*s%s%*s%s%s\n",
-    CG_W_PASS,  pending_.pass,  bar,
-    CG_W_ROWS,  pending_.rows,  bar,
-    CG_W_TIGHT, pending_.tight, bar,
-    CG_W_FRAC,  pending_.frac,  bar,
-    CG_W_OBJ,   objBuf,         bar,
-    CG_W_TIME,  timeBuf.c_str(), bar,
-    cutsBuf);
+  fprintf(fp_, "  %*d%s%*d%s%*d%s%-*s%s%*s%s%*s\n",
+    CG_W_PASS,  pending_.pass,   bar,
+    CG_W_ROWS,  pending_.rows,   bar,
+    CG_W_TIGHT, pending_.tight,  bar,
+    CG_W_CUTS,  cutsBuf,         bar,
+    CG_W_OBJ,   objBuf,          bar,
+    CG_W_TIME,  timeBuf.c_str());
   fflush(fp_);
 }
 

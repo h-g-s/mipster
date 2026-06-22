@@ -381,7 +381,7 @@ private:
 
   // Buffered pass row (printed once per-pass cut info arrives, or on next pass)
   struct PendingPassRow {
-    int pass = 0, rows = 0, tight = 0, frac = 0;
+    int pass = 0, rows = 0, tight = 0;
     double obj = 0.0, t = 0.0;
     bool valid = false;
   } pending_;
