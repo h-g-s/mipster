@@ -9592,7 +9592,7 @@ bool CbcModel::solveWithCuts(OsiCuts &cuts, int numberTries, CbcNode *node)
           { "Knapsack", "Knp" }, { "OddWheel", "Odd" },
           { "MixedInteger", "MIR" }, { "TwoMir", "2Mr" },
           { "FlowCover", "Flw" }, { "PathAgg", "Pth" },
-          { "ZeroHalf", "ZrH" }, { "Probing", "Prb" },
+          { "ZeroHalf", "ZH" }, { "Probing", "Prb" },
           { nullptr, nullptr }
         };
         auto abbr = [&](const char *nm) -> const char * {
