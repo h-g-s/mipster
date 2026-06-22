@@ -1748,10 +1748,190 @@ tree without modifying their \texttt{howOften}.
 \bottomrule
 \end{longtable}
 
+\section{LP reoptimisation cost control --- design notes}
+\label{sec:lpcost}
+
+\textbf{Status: not yet implemented.}  This section records the
+design rationale so the work can be picked up later.
+
+\subsection*{Problem statement}
+
+On some instances, the LP reoptimisation that follows cut insertion
+takes an unexpectedly large number of simplex iterations, making the
+root cut loop extremely slow.  The causes are:
+\begin{enumerate}[leftmargin=*]
+  \item \textbf{Row bloat} --- too many cuts add too many rows; each
+        pivot operates on a larger basis.
+  \item \textbf{Dense cuts} --- high NZ-per-row cuts increase the
+        per-pivot work.
+  \item \textbf{Already-large LP} --- when the LP is already large,
+        adding even a moderate number of rows compounds the cost.
+\end{enumerate}
+
+Currently, the \emph{only} NZ budget in the codebase is the global
+pool re-scan cap at \texttt{CbcModel.cpp:9342}:
+\[
+  \texttt{maximumAdd} = \max(\text{nz}/10,\;2n+100)
+\]
+Generator-produced cuts (all passes) have \textbf{no such cap}.
+Every cut surviving \texttt{filterCutsByBestPerVar} is applied
+unconditionally at line~9815.  This is the gap.
+
+\subsection*{The right signal: simplex iterations per cut pass}
+
+\texttt{solver\_->getIterationCount()} computed as a \emph{delta}
+across the post-cut-insertion \texttt{resolve()} is the correct
+deterministic proxy for LP difficulty.  It is:
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Deterministic} --- a function of LP state only, not
+        wall time.
+  \item \textbf{Self-calibrating} --- naturally proportional to LP
+        size and conditioning.
+  \item \textbf{Already partially present} --- \texttt{cutIterations}
+        at \texttt{CbcModel.cpp:9880} captures the post-resolve count,
+        but as a total rather than a per-pass delta.
+\end{itemize}
+
+The capture pattern needed:
+\begin{lstlisting}
+int itersBefore = solver_->getIterationCount();
+applyRowCuts(...);
+resolve();                     // the expensive call
+int itersThisPass = solver_->getIterationCount() - itersBefore;
+takeOffCuts(...);              // may also resolve, but not counted here
+\end{lstlisting}
+
+\subsection*{Two complementary levers}
+
+\subsubsection*{Lever~1 --- per-pass NZ budget for generator cuts
+                (preventive)}
+
+Extend the same budget logic used for the global pool to
+generator-produced cuts.  After \texttt{filterCutsByBestPerVar} and
+before building the \texttt{addCuts[]} array (around
+\texttt{CbcModel.cpp:9800}):
+
+\begin{lstlisting}
+CoinBigIndex nzBudget = std::max(
+    (CoinBigIndex)(cutPassNZRatio_ * solver_->getNumElements()),
+    (CoinBigIndex)(2 * solver_->getNumCols() + 100));
+// sort theseCuts by fitness descending; drop cuts exceeding budget
+\end{lstlisting}
+
+This mirrors the global pool formula with a configurable ratio.
+Two parameters:
+
+\begin{itemize}[leftmargin=*]
+  \item \textbf{\texttt{-cutPassNZRatio R}} (float, default $\infty$ =
+        current unlimited behaviour).  Suggested tuning range:
+        $0.2$--$0.5$.  The global pool uses $R \approx 0.1$; a higher
+        value here is justified because generator cuts are already
+        pre-filtered by \texttt{filterCutsByBestPerVar}.
+  \item \textbf{\texttt{-cutPassMaxNZ N}} (int, default $-1$ =
+        disabled).  Absolute NZ ceiling per pass, regardless of LP
+        size.  Combined with the ratio as
+        $\min(\text{ratio budget},\,N)$.  Useful when the ratio-based
+        budget is too generous on very large LPs.
+\end{itemize}
+
+\textbf{Why it does not hurt easy instances.}  On small/sparse LPs
+the floor $2n+100$ dominates and the budget exceeds the total NZ of
+all generated cuts.  The cap only bites when the LP is already large
+and adding dense cuts would make it much larger.
+
+\subsubsection*{Lever~2 --- LP iteration count gate (reactive)}
+
+After measuring \texttt{itersThisPass}, stop further cut generation
+if the LP became too hard:
+
+\begin{lstlisting}
+if (cutPassMaxIterations_ > 0
+    && itersThisPass > cutPassMaxIterations_) {
+  numberTries = 0;   // exit cut loop; B&B continues normally
+}
+\end{lstlisting}
+
+Parameter: \textbf{\texttt{-cutPassMaxIterations N}} (int, default
+$-1$ = disabled).  A natural initial benchmark: $N = 10 \times
+n_{\text{cols}}$, meaning ``if the LP needed more than 10 pivots per
+variable to re-solve, stop generating cuts''.
+
+\textbf{Why it does not hurt easy instances.}  The gate never fires
+if LP reoptimisation is cheap.  The threshold expressed as a multiple
+of column count is automatically proportional to problem size.
+
+\subsection*{How the two levers compose}
+
+\begin{tabular}{p{4cm}p{4.5cm}p{4.5cm}}
+\toprule
+\textbf{Scenario} & \textbf{Lever~1 effect} & \textbf{Lever~2 effect}\\
+\midrule
+Small LP, sparse cuts, few iterations &
+  Floor dominates $\Rightarrow$ all cuts admitted &
+  Threshold not hit $\Rightarrow$ all passes run\\
+Large LP, many dense cuts, LP still fast &
+  Budget caps NZ $\Rightarrow$ fewer cuts per pass &
+  Threshold not hit $\Rightarrow$ passes continue\\
+Large LP, LP became hard (many iterations) &
+  Budget already restricting NZ growth &
+  Gate fires $\Rightarrow$ cut loop exits\\
+\bottomrule
+\end{tabular}
+
+Lever~1 is \textbf{preventive} (avoids making the LP hard).
+Lever~2 is \textbf{reactive} (stops adding cuts once the LP is already
+hard).  They cover different failure modes and can be used
+independently or together.
+
+\subsection*{One design subtlety}
+
+Setting \texttt{numberTries = 0} when the iteration gate fires stops
+the cut loop entirely.  A softer variant would be to skip the next
+pass but allow the loop to retry after a few passes (``cooldown'').
+This would protect against the case where the LP is temporarily hard
+after a particular cut but would benefit from further cuts once the
+dual solution settles.  The implementation would keep a
+\texttt{cutPassCooldown} counter rather than setting
+\texttt{numberTries = 0}.
+
+\subsection*{What to leave out}
+
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Time-based fallbacks} --- explicitly excluded for
+        determinism.
+  \item \textbf{Per-generator NZ caps} --- already served by
+        \texttt{-cutLength} (Gomory) and the \texttt{switchOffIfLessThan\_}
+        mechanism; no need to duplicate at this level.
+  \item \textbf{Un-nooping the \texttt{densityNew > 200} block}
+        (\texttt{CbcModel.cpp:10579--10594}) --- that block is
+        post-loop and only affects future \emph{tree} nodes, not
+        the current root pass.  It is a separate, complementary
+        mechanism worth revisiting independently.
+\end{itemize}
+
+\subsection*{Implementation scope}
+
+Both levers touch a small, well-defined region of \texttt{solveWithCuts}:
+
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Lever~1}: $\sim$25 lines after
+        \texttt{CbcModel.cpp:9657} (after \texttt{filterCutsByBestPerVar}),
+        before line~9815 (\texttt{applyRowCuts}).  Sort \texttt{theseCuts}
+        by fitness (reusing \texttt{CoinCutPool::rowCutFitness}), then
+        trim to NZ budget.
+  \item \textbf{Lever~2}: $\sim$8 lines after the \texttt{resolve()}
+        at line~9834.  Capture \texttt{itersBefore} just before
+        \texttt{applyRowCuts}, compute delta, check threshold.
+\end{itemize}
+
+Plus the standard boilerplate for each parameter: field +
+getter/setter in \texttt{CbcModel.hpp}; init in constructor, copy,
+and assign (5 sites); entry in \texttt{CbcParam.hpp};
+\texttt{CbcParameters.cpp} registration; wire-up in
+\texttt{CbcSolver.cpp}.
+
 \section{Complete parameter catalog}
 \label{sec:catalog}
-
-\subsection*{A. CLI parameters (tunable)}
 
 \begin{longtable}{p{4.0cm}p{2.0cm}p{8.5cm}}
 \toprule
