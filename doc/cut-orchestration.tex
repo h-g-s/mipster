@@ -301,6 +301,22 @@ $-98$ for the corresponding generator, which causes the
 \texttt{switchOffIfLessThan\_} test above to demote it to $-99$
 unless it pulled its weight at the root.
 
+\textbf{Important interaction with pass-0 early disable.}
+Generators with \texttt{switchOffIfLessThan\_ > 0} are also disabled
+\emph{during} root cutting: at the end of pass~0
+(\texttt{CbcCutGenerator.cpp:1583--1591}), if the generator produced
+fewer row cuts than the threshold, \texttt{whenCutGenerator\_} is set
+directly to $-100$.  The post-loop then reads \texttt{howOften =
+-100} at the start of its per-generator iteration, skips the
+adjustment logic, and \emph{only emits a \texttt{CBC\_GENERATOR}
+summary message if the generator found at least one cut overall}.
+This means TwoMirCuts (\texttt{switchOffIfLessThan = 1}) and
+ZeroHalf (\texttt{switchOffIfLessThan = 2}) may be silently absent
+from the cut summary on problems where they find nothing --- even
+though they were configured and ran on pass~0.  The fix applied in
+MIPster removes the ``$n > 0$'' guard so all generators are always
+reported at root (\texttt{CbcModel.cpp:10757--10774}).
+
 \subsection*{Generator scan caps}
 
 Two compile-time caps live in \texttt{src/CbcCutGenerator.hpp}:
@@ -442,8 +458,6 @@ Site                                & Cuts deposited\\
 
 \subsection*{Per-cut effectiveness}
 
-\subsection*{Per-cut effectiveness}
-
 Every \texttt{OsiRowCut} carries an \texttt{effectiveness()} value
 (\texttt{double}) used both for purging (\S\ref{sec:takeoff}) and
 for ranking when too many cuts compete for a budget.  Cgl
@@ -469,33 +483,104 @@ Saved-to-slack sentinel   & $-1.234$                   & \texttt{CbcModel::takeO
 flags a cut that has been parked on the slack pool to be considered
 again later.
 
-\subsection*{Ranking site 1: violation sort of the global pool}
+\subsection*{Ranking site 1: global pool re-scan (pass~1)}
 
 When pass~1 of \texttt{solveWithCuts} scans the global pool for cuts
 violated by the current LP, far more may be violated than the
 relaxation can absorb without bloating.  The code at
-\texttt{CbcModel.cpp:9101} sorts those violated cuts by violation
-(descending) and applies a budget:
+\texttt{CbcModel.cpp:9363} scores each violated cut and then sorts
+descending, applying a matrix-element budget:
 
 \begin{lstlisting}
-CoinSort_2(violations, violations + numberPossible, which);
+// Score depends on -cutRankingMetric:
+//   violation (0): score = thisCut->violated(x*)
+//   fitness   (1): score = CoinCutPool::rowCutFitness(...)
+CoinSort_2(scores, scores + numberPossible, which);
 int maximumAdd =
   std::max(numberElements / 10, 2 * numberColumns) + 100;
 // pick from `which` until maximumAdd nonzeros consumed
 \end{lstlisting}
 
-So the rule is: \emph{most-violated first, until the matrix-element
-budget is exhausted}.
+So the rule is: \emph{best-scoring first (violation or fitness),
+until the matrix-element budget is exhausted}.  Cuts with
+\texttt{effectiveness() = COIN\_DBL\_MAX} bypass the budget.
+
+The global-pool admission threshold (minimum violation to even
+consider a cut) is controlled by \texttt{-globalCutMinViolation}
+(default 0.005, field \texttt{globalCutMinViolation\_}).
+
+\subsection*{Per-round cut pool filter (\texttt{filterCutsByBestPerVar})}
+\label{sec:roundfilter}
+
+After each cut-generation pass but before LP insertion, if
+\texttt{-cutPoolFilter} is \texttt{on} (default) and the round
+produced at least \texttt{-cutPoolFilterMinCuts} row cuts (default
+50), the static helper \texttt{filterCutsByBestPerVar}
+(\texttt{CbcModel.cpp:8530}) is applied.
+
+The algorithm replicates the \texttt{CoinCutPool} best-by-variable
+logic (\S\ref{sec:cutpool-vs-coincutpool}) directly on the
+\texttt{OsiCuts} batch:
+
+\begin{enumerate}[leftmargin=*]
+  \item Compute the fitness score for every row cut using
+        \texttt{CoinCutPool::rowCutFitness}.
+  \item For each column, record the index of the highest-fitness cut
+        that contains it.
+  \item A cut survives only if it is the best cut for \emph{at least
+        one} column.  Cuts that are strictly dominated in all their
+        columns are removed.
+  \item Column cuts are always kept unchanged.
+\end{enumerate}
+
+The filter is a no-op when fewer than 2 row cuts are present.
+On instances with many cuts per round (e.g.\ CMS750\_4 produces
+$\sim$1473 cuts per round) this can significantly reduce LP bloat.
+On instances with few cuts per round (e.g.\ d05100, $\sim$2 cuts)
+the \texttt{-cutPoolFilterMinCuts} threshold skips the filter and
+avoids any overhead.
+
+\begin{lstlisting}
+// CbcModel.cpp:9654-9657
+if (cutPoolFilter_ && theseCuts.sizeRowCuts() >= cutPoolFilterMinCuts_)
+  filterCutsByBestPerVar(theseCuts, cbcColSolution_, getNumCols());
+\end{lstlisting}
+
+\subsection*{Fitness score formula}
+
+All three ranking sites and the round filter share the same fitness
+formula, exposed as the static method
+\texttt{CoinCutPool::rowCutFitness}
+(\texttt{src/CoinUtils/CoinCutPool.cpp}):
+
+\[
+  \text{fitness}(C) = \frac{\text{viol}(C)}{|\{i : x^\ast_i > 0\}|} \cdot 10^5
+                    + \frac{1}{\Delta_C + 1} \cdot 10^3
+\]
+
+where $\Delta_C$ is the spread of coefficient magnitudes
+($\log_{10}(\max|a_i|) - \log_{10}(\min|a_i|)$).  This favours cuts
+that are \textbf{(a)} violated relative to the number of active
+variables (sparse, targeted) and \textbf{(b)} numerically balanced
+(small coefficient spread).  The fitness metric is the default
+(\texttt{-cutRankingMetric fitness}).
+
+For $\ge$-form cuts (lower-bound only), the formula is applied after
+negating coefficients and right-hand side to bring the cut into
+$\le$-form.  Cuts with zero active columns fall back to raw violation.
 
 \subsection*{Ranking site 2: dive conflict cuts}
 
-\texttt{doHeuristicsAtRoot} (the new MIPster path,
-\texttt{CbcModel.cpp:16800--16846}) collects conflict cuts from the
-\texttt{CbcRootHeuristicSchedule} dives.  It scores each by
-\emph{normalised violation per element} and keeps the top
-\texttt{conflictMaxCuts()}:
+\texttt{doHeuristicsAtRoot} (the MIPster path,
+\texttt{CbcModel.cpp:17160--17185}) collects conflict cuts from the
+\texttt{CbcRootHeuristicSchedule} dives.  It scores each cut using
+the active \texttt{-cutRankingMetric} (violation or fitness) and
+keeps the top \texttt{conflictMaxCuts()}:
 
 \begin{lstlisting}
+// fitness metric (default):
+scored[i] = { CoinCutPool::rowCutFitness(...), i };
+// violation metric:
 scored[i] = { (lhs - c.ub()) / c.row().getNumElements(), i };
 std::sort(scored.begin(), scored.end(), descending);
 nAdded = std::min(nTotal, maxCuts);
@@ -572,8 +657,9 @@ Parameter            & Default & Where\\
 \subsection*{Default generator and heuristic order}
 
 Cut generators are registered in this order in
-\texttt{CbcSolver.cpp:9235--9286}: Probing, Gomory, KnapsackCover,
-RedSplit, Clique~(BK), OddWheel, MIR2, FlowCover, Twomir.  Primal
+\texttt{src/CbcSolverCutSetup.cpp}: Probing, Gomory, KnapsackCover,
+RedSplit, Clique~(BK), OddWheel, MIR2, FlowCover, PathAggregation,
+TwoMirCuts, ZeroHalf.  Primal
 heuristics are registered at \texttt{CbcSolver.cpp:9298--9322}:
 FPump, Rounding, Local~(combine), GreedyCover, GreedyEquality
 (optionally RandRound).
@@ -649,22 +735,19 @@ re-solve, then drop what did not bind}.
 \subsection*{1. Per-cut admission threshold (global pool re-scan)}
 
 When the global pool is consulted at the start of a pass
-(\texttt{CbcModel.cpp:9066--9131}), each saved cut is admitted only
-if its violation against the current $x^\ast$ exceeds a fixed
-threshold:
+(\texttt{CbcModel.cpp:9348--9400}), each saved cut is admitted only
+if its violation against the current $x^\ast$ exceeds the
+\texttt{-globalCutMinViolation} threshold (default $0.005$):
 
 \begin{lstlisting}
 double violation = thisCut->violated(cbcColSolution_);
-if (violation > 0.005) {            // hard-coded in CbcModel.cpp:9096
-  violations[numberPossible] = -violation;
-  which[numberPossible++] = i;
+if (violation > globalCutMinViolation_) {  // default 0.005
+  // score and collect for ranking
 }
 \end{lstlisting}
 
-So the cutoff for the global-pool re-injection is
-\textbf{$0.005$ absolute violation} (a conservative multiple of the
-LP primal tolerance, $\sim 10^{-7}$).  Cuts with smaller violation
-are skipped entirely.
+Cuts with smaller violation are skipped entirely.  This threshold is
+tunable via \texttt{-globalCutMinViolation}.
 
 \subsection*{2. Element budget on global-pool re-injection}
 \label{sec:globalpool-budget}
@@ -715,10 +798,10 @@ Field & Default & Effect when triggered\\
 \texttt{switchOffIfLessThan\_} & $0$ & kill generator on its first
                                        call if it produced fewer
                                        cuts than this
-                                       (\texttt{CbcCutGenerator.cpp:1565--1573})\\
+                                       (\texttt{CbcCutGenerator.cpp:1583--1591})\\
 \texttt{maximumTries\_}        & $-1$ (off) & hard-cap on how many
                                        calls the generator gets
-                                       (\texttt{CbcCutGenerator.cpp:1575--1578})\\
+                                       (\texttt{CbcCutGenerator.cpp:1593--1596})\\
 \texttt{whenCutGenerator\_}    & --   & frequency (\S\ref{sec:howoften})\\
 \bottomrule
 \end{tabular}
@@ -726,7 +809,7 @@ Field & Default & Effect when triggered\\
 The relevant snippet:
 
 \begin{lstlisting}
-// CbcCutGenerator.cpp:1565
+// CbcCutGenerator.cpp:1583
 if (node == NULL && !pass) {
   if (numberRowCutsAfter - numberRowCutsBefore < switchOffIfLessThan_) {
     maximumTries_       = 0;
@@ -738,6 +821,26 @@ if (maximumTries_ > 0) {
   if (!maximumTries_) whenCutGenerator_ = -100;
 }
 \end{lstlisting}
+
+The values actually assigned by \texttt{installCutGenerators}
+(\texttt{src/CbcSolverCutSetup.cpp}) via the \texttt{switches[]} array:
+
+\begin{tabular}{ll}
+\toprule
+Generator & \texttt{switchOffIfLessThan\_}\\
+\midrule
+Probing, Gomory, Knapsack, Clique, OddWheel & 0 (never early-disabled)\\
+MIR, FlowCover, PathAggregation             & 0\\
+TwoMirCuts                                  & 1\\
+ZeroHalf                                    & 2\\
+RedSplit, LandP                             & uses \texttt{maximumTries\_} instead\\
+\bottomrule
+\end{tabular}
+
+TwoMirCuts and ZeroHalf will therefore be permanently disabled after
+pass~0 if they produce no (or fewer than threshold) cuts, and will only
+appear in the root summary if they found at least one cut --- see the
+note in \S\ref{sec:howoften} on the post-loop decay.
 
 \subsection*{5. Per-cut density cap (Gomory)}
 
@@ -812,15 +915,17 @@ only the cuts that actually bound the next LP relaxation.
 \textbf{Threshold} & \textbf{Where} & \textbf{Default}\\
 \midrule
 \endhead
-Global-pool violation cutoff   & \texttt{CbcModel.cpp:9096}        & $0.005$ (hard-coded)\\
-Global-pool element budget     & \texttt{CbcModel.cpp:9075}        & $\max(\text{nz}/10,\,2n)+100$\\
+Global-pool violation cutoff   & \texttt{CbcModel.cpp:9363}
+  (\texttt{globalCutMinViolation\_})   & $0.005$ (CLI: \texttt{-globalCutMinViolation})\\
+Global-pool element budget     & \texttt{CbcModel.cpp:9342}        & $\max(\text{nz}/10,\,2n)+100$\\
 Slack-cut re-admit cutoff      & \texttt{CbcModel.cpp:11109}       & $100\,\tau_{\text{prim}}$\\
-\texttt{switchOffIfLessThan\_} & \texttt{CbcCutGenerator.cpp:1567} & $0$ per generator\\
-\texttt{maximumTries\_}        & \texttt{CbcCutGenerator.cpp:1575} & $-1$ (off)\\
+\texttt{switchOffIfLessThan\_} & \texttt{CbcCutGenerator.cpp:1583} & 0 per generator (TwoMir=1, ZH=2)\\
+\texttt{maximumTries\_}        & \texttt{CbcCutGenerator.cpp:1593} & $-1$ (off)\\
 Gomory cut-length cap          & \texttt{CbcSolverCutSetup.cpp:175}& $-1$ (off)\\
-Dive conflict-cut top-$K$      & \texttt{CbcModel.cpp:9994}        & $K=128$\\
+Dive conflict-cut top-$K$      & \texttt{CbcModel.cpp:10288}       & $K=128$\\
 Pool capacity (hash full)      & \texttt{CbcCountRowCut.cpp:587}   & implementation-defined\\
 \texttt{takeOffCuts} drop      & \texttt{CbcModel.cpp:11214}       & basic $\wedge$ \texttt{effectiveness}$\le 10^{10}$\\
+Cut pool filter threshold      & \texttt{CbcModel.cpp:9656}        & 50 (CLI: \texttt{-cutPoolFilterMinCuts})\\
 \bottomrule
 \end{longtable}
 
@@ -882,20 +987,28 @@ filters on top of duplicate detection:
         \texttt{CoinCutPool} keeps the few that matter.
   \item \texttt{CglOddWheel::generateCuts}
         (\texttt{src/Cgl/CglOddWheel.cpp:121}) --- same pattern.
+  \item \textbf{\texttt{filterCutsByBestPerVar} in
+        \texttt{CbcModel.cpp:8530}} --- the best-by-variable criterion
+        is now applied directly on \texttt{OsiCuts} at the round
+        level (before LP insertion) via a static helper that replicates
+        \texttt{CoinCutPool}'s logic without using the pool's internal
+        data structures.  This is the per-round cut pool filter
+        described in \S\ref{sec:roundfilter} and activated by
+        \texttt{-cutPoolFilter on} (default).
 \end{itemize}
 
 \subsection*{Adoption opportunities}
 
-The two main places in the codebase where \texttt{CoinCutPool}
+The remaining places in the codebase where \texttt{CoinCutPool}
 would replace ad-hoc top-$K$ logic, ranked by expected impact:
 
 \begin{enumerate}[leftmargin=*]
-  \item \textbf{Dive conflict cuts} (\texttt{CbcModel.cpp:9994--10008}
-        and \texttt{16800--16846}).  Currently sorts by
-        $(lhs-ub)/\text{nz}$ and keeps top \texttt{conflictMaxCuts\_}
-        (\S\ref{sec:thresholds}, item~6).  This is \emph{exactly}
-        the niche \texttt{CoinCutPool} occupies, but with the
-        added best-by-variable coverage that the current sort lacks.
+  \item \textbf{Global-pool re-scan in \texttt{solveWithCuts}}
+        (\texttt{CbcModel.cpp:9340--9400}).  The current logic
+        sorts by fitness or violation but applies no coverage
+        criterion.  A \texttt{CoinCutPool} layer would add
+        best-by-variable coverage, at the cost of
+        $O(n_{\text{cols}})$ memory per scan.
   \item \textbf{\texttt{CglCliqueStrengthening}}.  Same family of
         cuts as BKClique/OddWheel; sound for the dominance test.
   \item \textbf{Clique-cut path inside \texttt{CglProbing}}.
@@ -903,11 +1016,6 @@ would replace ad-hoc top-$K$ logic, ranked by expected impact:
         sites (\texttt{CglProbing.cpp:230, 241, 270, 1382, \dots}).
         Replacing those raw \texttt{cs.insert()} calls with a
         \texttt{CoinCutPool} would cut LP bloat substantially.
-  \item \textbf{Global-pool re-scan in \texttt{solveWithCuts}}
-        (\texttt{CbcModel.cpp:9066--9131}).  The current logic
-        sorts by violation only.  A \texttt{CoinCutPool} layer
-        would add coverage, at the cost of $O(n_{\text{cols}})$
-        memory per scan.
   \item Legacy \texttt{CglClique} and \texttt{CglOddHole} ---
         these ship clique cuts but predate \texttt{CoinCutPool}.
 \end{enumerate}
@@ -1684,29 +1792,42 @@ tree without modifying their \texttt{howOften}.
 \texttt{-pathAggrCuts}       & root      & Path aggregation generator mode.\\
 \texttt{-zeroHalfSparseThreshold}& 8000  & ZeroHalf: switch to sparse graph.\\
 \texttt{-zeroHalfRowMaxPairCount}& 150000& ZeroHalf: skip dense rows.\\
+\texttt{-cutRankingMetric}      & fitness& Scoring formula at all 3 ranking
+  sites: \texttt{violation} (raw LP violation) or \texttt{fitness}
+  ($(viol/activeCols)\cdot10^5 + (1/(\Delta_C+1))\cdot10^3$).\\
+\texttt{-cutPoolFilter}         & on    & Enable per-round
+  best-per-variable filter (\texttt{filterCutsByBestPerVar}).\\
+\texttt{-cutPoolFilterMinCuts}  & 50    & Minimum row cuts per round
+  to activate the filter; rounds with fewer cuts are unfiltered.\\
+\texttt{-globalCutMinViolation} & 0.005 & Minimum violation for a
+  global-pool cut to be re-admitted to the LP.\\
 \bottomrule
 \end{longtable}
 
 \subsection*{B. Per-generator internal defaults
              (\texttt{installCutGenerators})}
 
-\begin{longtable}{p{2.5cm}p{6.5cm}p{5.5cm}}
+\begin{longtable}{p{2.5cm}p{5.5cm}p{1.8cm}p{3.0cm}}
 \toprule
-\textbf{Generator} & \textbf{Key limits set} & \textbf{Accuracy flag}\\
+\textbf{Generator} & \textbf{Key limits set} & \textbf{Accuracy} &
+  \textbf{\texttt{switchOffIfLessThan}}\\
 \midrule
 \endhead
 Probing & \texttt{maxPass=1, maxProbe=123, maxLook=10/20,
-  maxElements=200/300, rowCuts=$-3$} & 5\\
+  maxElements=200/300, rowCuts=$-3$} & 5 & 0\\
 Gomory  & \texttt{limitAtRoot=1000, limit=50, awayAtRoot=0.005}
-  & 3\\
-Knapsack & (no special limits) & 1\\
-MIR/Flow & (default params) & 2\\
+  & 3 & 0\\
+Knapsack & (no special limits) & 1 & 0\\
+MIR/Flow & (default params) & 2 & 0\\
+PathAggr & (no special limits) & 2 & 0\\
 TwoMIR  & \texttt{maxElements=250, awayAtRoot=0.005, away=0.01}
-  & 4\\
-Clique  & (CoinCutPool-based selection inside) & 0\\
-OddWheel& (CoinCutPool-based selection inside) & 0\\
-ZeroHalf& sparse threshold 8000, pair-count 150000 & 5\\
-RedSplit/LandP & \texttt{maximumTries=slowcutpasses (10)} & 5\\
+  & 4 & \textbf{1} (disabled pass~0 if 0 cuts)\\
+Clique  & (CoinCutPool-based selection inside) & 0 & 0\\
+OddWheel& (CoinCutPool-based selection inside) & 0 & 0\\
+ZeroHalf& sparse threshold 8000, pair-count 150000 & 5 &
+  \textbf{2} (disabled pass~0 if $<$2 cuts)\\
+RedSplit/LandP & \texttt{maximumTries=slowcutpasses (10)} & 5 &
+  0 (uses \texttt{maximumTries\_} instead)\\
 \bottomrule
 \end{longtable}
 
@@ -1718,11 +1839,8 @@ RedSplit/LandP & \texttt{maximumTries=slowcutpasses (10)} & 5\\
 \textbf{What it controls}\\
 \midrule
 \endhead
-Global-pool violation cutoff & 0.005 & CbcModel.cpp:9096 &
-  Minimum violation for re-scan; tighter $\Rightarrow$ tree
-  benefits more from root cuts.\\
 Global-pool element budget & $\max(\text{nz}/10,2n)+100$ &
-  CbcModel.cpp:9075 & Maximum NZ the LP can grow per global-pool
+  CbcModel.cpp:9342 & Maximum NZ the LP can grow per global-pool
   injection.\\
 \texttt{CUT\_HISTORY} & 7 & CbcModel.cpp:8549 & Rolling-window
   length for ifMove early-exit.\\
