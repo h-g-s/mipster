@@ -1425,6 +1425,27 @@ int CbcOutputHandler::print()
       }
       return 0;
     }
+    // ext=52: "Root pass %d cuts: %s"
+    if (ext == 52) {
+      const char *p = std::strstr(buf, "Root pass ");
+      if (p) {
+        int pass = 0;
+        if (std::sscanf(p, "Root pass %d cuts:", &pass) == 1) {
+          const char *colon = std::strchr(p, ':');
+          std::string cutsStr;
+          if (colon && colon[1]) {
+            const char *start = colon + 2; // skip ": "
+            // trim leading/trailing whitespace
+            while (*start == ' ') ++start;
+            cutsStr = start;
+            while (!cutsStr.empty() && cutsStr.back() == ' ')
+              cutsStr.pop_back();
+          }
+          cutGenOut_->onPassCuts(pass, cutsStr);
+        }
+      }
+      return 0;
+    }
     // ext=31: "N added rows had average density of X" — suppress (not per-pass detail)
     if (ext == 31)
       return 0;
@@ -1940,9 +1961,9 @@ static const int CG_W_PASS   = 4;
 static const int CG_W_ROWS   = 8;
 static const int CG_W_TIGHT  = 8;
 static const int CG_W_FRAC   = 6;
-static const int CG_W_SUMINF = 10;
 static const int CG_W_OBJ    = 16;
 static const int CG_W_TIME   = 8;
+static const int CG_W_CUTS   = 45;
 
 static CoinTable makeCgProgTable(bool utf8, bool compact)
 {
@@ -1951,9 +1972,9 @@ static CoinTable makeCgProgTable(bool utf8, bool compact)
     { "Rows",      CG_W_ROWS   },
     { "Tight",     CG_W_TIGHT  },
     { "Frac",      CG_W_FRAC   },
-    { "Suminf",    CG_W_SUMINF },
     { "Objective", CG_W_OBJ    },
-    { "Time(s)",      CG_W_TIME   },
+    { "Time(s)",   CG_W_TIME   },
+    { "Cuts",      CG_W_CUTS,  /*leftAlign=*/true },
   }, utf8, /*indent=*/2, compact);
 }
 
@@ -1998,6 +2019,7 @@ void CbcCutGenOutput::resetForRestart(const char *title)
   genTablePrinted_   = false;
   haveSummary_       = false;
   genInfos_.clear();
+  pending_.valid = false;
   sumNcuts_   = 0;
   sumFromObj_ = 0.0;
   sumToObj_   = 0.0;
@@ -2005,7 +2027,7 @@ void CbcCutGenOutput::resetForRestart(const char *title)
   title_ = title ? title : "Cut generation (root node, part 2)";
 }
 
-void CbcCutGenOutput::onPass(int pass, int rows, int tight, int frac, double suminf, double obj, double t)
+void CbcCutGenOutput::onPass(int pass, int rows, int tight, int frac, double /*suminf*/, double obj, double t)
 {
   if (state_ != State::Started) return;
 
@@ -2014,26 +2036,52 @@ void CbcCutGenOutput::onPass(int pass, int rows, int tight, int frac, double sum
     printTableOpen(fp_, makeCgProgTable(utf8_, compact_));
   }
 
+  // Flush any previously buffered row (cuts message didn't arrive for it).
+  if (pending_.valid)
+    flushPendingRow();
+
+  // Buffer this row; will be flushed when onPassCuts() arrives (or on next pass / close).
+  pending_ = { pass, rows, tight, frac, obj, t, true };
+}
+
+void CbcCutGenOutput::flushPendingRow(const std::string &cutsStr)
+{
+  if (!pending_.valid) return;
+  pending_.valid = false;
+
   const char *bar = tableBar(utf8_, compact_);
-  char objBuf[24], suminfBuf[16];
-  std::snprintf(objBuf,    sizeof(objBuf),    "%.6g", obj);
-  std::snprintf(suminfBuf, sizeof(suminfBuf), "%.4g", suminf);
+  char objBuf[24];
+  std::snprintf(objBuf, sizeof(objBuf), "%.6g", pending_.obj);
   const std::string timeBuf = fmtTime(CoinWallclockTime());
-  fprintf(fp_, "  %*d%s%*d%s%*d%s%*d%s%*s%s%*s%s%*s\n",
-    CG_W_PASS,   pass,             bar,
-    CG_W_ROWS,   rows,             bar,
-    CG_W_TIGHT,  tight,            bar,
-    CG_W_FRAC,   frac,             bar,
-    CG_W_SUMINF, suminfBuf,        bar,
-    CG_W_OBJ,    objBuf,           bar,
-    CG_W_TIME,   timeBuf.c_str());
+
+  // Truncate cuts string to column width.
+  char cutsBuf[CG_W_CUTS + 1];
+  std::snprintf(cutsBuf, sizeof(cutsBuf), "%-*s", CG_W_CUTS, cutsStr.c_str());
+
+  fprintf(fp_, "  %*d%s%*d%s%*d%s%*d%s%*s%s%*s%s%s\n",
+    CG_W_PASS,  pending_.pass,  bar,
+    CG_W_ROWS,  pending_.rows,  bar,
+    CG_W_TIGHT, pending_.tight, bar,
+    CG_W_FRAC,  pending_.frac,  bar,
+    CG_W_OBJ,   objBuf,         bar,
+    CG_W_TIME,  timeBuf.c_str(), bar,
+    cutsBuf);
   fflush(fp_);
+}
+
+void CbcCutGenOutput::onPassCuts(int pass, const std::string &cutsStr)
+{
+  if (state_ != State::Started) return;
+  if (pending_.valid && pending_.pass == pass)
+    flushPendingRow(cutsStr);
 }
 
 void CbcCutGenOutput::printProgressEnd()
 {
   if (!progHeaderPrinted_ || progTableClosed_) return;
   progTableClosed_ = true;
+  if (pending_.valid)
+    flushPendingRow();
   printTableClose(fp_, makeCgProgTable(utf8_, compact_));
 }
 

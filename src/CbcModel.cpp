@@ -9220,6 +9220,7 @@ bool CbcModel::solveWithCuts(OsiCuts &cuts, int numberTries, CbcNode *node)
   double startObjective = solver_->getObjValue() * direction;
 
   currentPassNumber_ = 0;
+  passGenCutsBase_.clear(); // reset per-pass generator cut tracking
   // Really primalIntegerTolerance; relates to an illposed problem with various
   // integer solutions depending on integer tolerance.
   // double primalTolerance = 1.0e-7 ;
@@ -9566,6 +9567,15 @@ bool CbcModel::solveWithCuts(OsiCuts &cuts, int numberTries, CbcNode *node)
           threadMode with bit 2^1 set indicates we should use threads for root
          cut generation.
         */
+      // Capture per-generator cut totals before this pass (root only).
+      if (!node) {
+        int n = numberCutGenerators_;
+        if ((int)passGenCutsBase_.size() != n) {
+          passGenCutsBase_.resize(n);
+          for (int gi = 0; gi < n; gi++)
+            passGenCutsBase_[gi] = generator_[gi]->numberCutsInTotal();
+        }
+      }
       if ((threadMode_ & 2) == 0 || numberNodes_) {
         status = serialCuts(theseCuts, node, slackCuts, lastNumberCuts);
       } else {
@@ -9573,6 +9583,52 @@ bool CbcModel::solveWithCuts(OsiCuts &cuts, int numberTries, CbcNode *node)
 #ifdef CBC_THREAD
         status = parallelCuts(master, theseCuts, node, slackCuts, lastNumberCuts);
 #endif
+      }
+      // Emit per-pass per-generator cut counts for the progress table (root only).
+      if (!node) {
+        // Short name lookup: match on substring of generator name.
+        static const struct { const char *key; const char *abbr; } kShort[] = {
+          { "BKClique", "Clq" }, { "Clique", "Clq" }, { "Gomory", "Gmr" },
+          { "Knapsack", "Knp" }, { "OddWheel", "Odd" },
+          { "MixedInteger", "MIR" }, { "TwoMir", "2Mr" },
+          { "FlowCover", "Flw" }, { "PathAgg", "Pth" },
+          { "ZeroHalf", "ZrH" }, { "Probing", "Prb" },
+          { nullptr, nullptr }
+        };
+        auto abbr = [&](const char *nm) -> const char * {
+          for (int k = 0; kShort[k].key; k++)
+            if (std::strstr(nm, kShort[k].key))
+              return kShort[k].abbr;
+          return "Gen";
+        };
+        // Collect (delta, index) pairs sorted by count descending.
+        int n = numberCutGenerators_;
+        std::vector< std::pair< int, int > > deltas;
+        deltas.reserve(n);
+        for (int gi = 0; gi < n; gi++) {
+          int d = generator_[gi]->numberCutsInTotal() - passGenCutsBase_[gi];
+          passGenCutsBase_[gi] = generator_[gi]->numberCutsInTotal();
+          if (d > 0)
+            deltas.push_back({ d, gi });
+        }
+        std::sort(deltas.begin(), deltas.end(),
+          [](const std::pair< int, int > &a, const std::pair< int, int > &b) {
+            return a.first > b.first;
+          });
+        char buf[128] = "";
+        int pos = 0;
+        for (auto &p : deltas) {
+          int gi = p.second;
+          int cnt = p.first;
+          const char *sn = abbr(generator_[gi]->cutGeneratorName());
+          int written = std::snprintf(buf + pos, sizeof(buf) - pos - 1, "%s(%d) ", sn, cnt);
+          if (written > 0 && pos + written < (int)sizeof(buf) - 1)
+            pos += written;
+        }
+        // Trim trailing space.
+        if (pos > 0 && buf[pos - 1] == ' ')
+          buf[pos - 1] = '\0';
+        handler_->message(CBC_ROOT_PASS_CUTS, messages_) << currentPassNumber_ << buf << CoinMessageEol;
       }
       // Do we need feasible and violated?
       feasible = (status >= 0);

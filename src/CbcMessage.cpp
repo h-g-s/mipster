@@ -105,6 +105,7 @@ static Cbc_message us_english[] = {
   { CBC_GENERAL2, 46, 2, "%s" },
   { CBC_ROOT_START, 51, 1, "Starting cut generation at root node" },
   { CBC_ROOT_DETAIL, 46, 1, "Root node pass %d, %d rows, %d tight cuts, %d frac, %g suminf - objective %g (%.2f seconds)" },
+  { CBC_ROOT_PASS_CUTS, 52, 1, "Root pass %d cuts: %s" },
   { CBC_CUTOFF_WARNING1, 47, 1, "Cutoff set to %g - equivalent to best solution of %g" },
 #ifndef CBC_MANY_NODE_COUNTS
   { CBC_END_SOLUTION, 48, 2, "Final check on integer solution of %g found after %d iterations and %d nodes (%.2f seconds)" },

@@ -342,6 +342,7 @@ public:
   // Called by CbcOutputHandler for each relevant ext code
   void onStart();                                                   // ext=51
   void onPass(int pass, int rows, int tight, int frac, double suminf, double obj, double t); // ext=46
+  void onPassCuts(int pass, const std::string &cutsStr);            // ext=52
   void onSummary(int ncuts, double fromObj, double toObj, int passes); // ext=13
   void onGenerator(const GenInfo &g);                               // ext=14
 
@@ -363,6 +364,7 @@ private:
 
   void printProgressEnd();
   void printGeneratorTable();
+  void flushPendingRow(const std::string &cutsStr = "");
 
   FILE *fp_;
   bool utf8_;
@@ -376,6 +378,13 @@ private:
   // Progress table
   bool progHeaderPrinted_ = false;
   bool progTableClosed_ = false;
+
+  // Buffered pass row (printed once per-pass cut info arrives, or on next pass)
+  struct PendingPassRow {
+    int pass = 0, rows = 0, tight = 0, frac = 0;
+    double obj = 0.0, t = 0.0;
+    bool valid = false;
+  } pending_;
 
   // Summary from ext=13
   int sumNcuts_ = 0;

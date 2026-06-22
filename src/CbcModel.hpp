@@ -3092,6 +3092,8 @@ private:
   int cutPoolFilterMinCuts_;
   /// Minimum LP violation for a global cut to be re-injected (default 0.005)
   double globalCutMinViolation_;
+  /// Per-generator cumulative cut counts at start of each root pass (for per-pass delta)
+  std::vector< int > passGenCutsBase_;
   /// Hotstart solution
   double *hotstartSolution_;
   /// Hotstart priorities
