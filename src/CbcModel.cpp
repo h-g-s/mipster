@@ -10757,18 +10757,18 @@ bool CbcModel::solveWithCuts(OsiCuts &cuts, int numberTries, CbcNode *node)
         // may have been switched off - report
         if (!numberNodes_) {
           int n = generator_[i]->numberCutsInTotal();
+          double average = 0.0;
           if (n) {
-            double average = 0.0;
             average = generator_[i]->numberElementsInTotal();
             average /= n;
-            handler_->message(CBC_GENERATOR, messages_)
-              << i << generator_[i]->cutGeneratorName() << n << average
-              << generator_[i]->numberColumnCuts()
-              << generator_[i]->numberCutsActive() + generator_[i]->numberColumnCuts();
-            handler_->printing(generator_[i]->timing())
-              << generator_[i]->timeInCutGenerator();
-            handler_->message() << -100 << CoinMessageEol;
           }
+          handler_->message(CBC_GENERATOR, messages_)
+            << i << generator_[i]->cutGeneratorName() << n << average
+            << generator_[i]->numberColumnCuts()
+            << generator_[i]->numberCutsActive() + generator_[i]->numberColumnCuts();
+          handler_->printing(generator_[i]->timing())
+            << generator_[i]->timeInCutGenerator();
+          handler_->message() << -100 << CoinMessageEol;
         }
         continue;
       }
