@@ -483,7 +483,7 @@ void installCutGenerators(
     if (zerohalfMode > CbcParameters::CGForceOn)
       zerohalfGen.setFlags(1);
     babModel.addCutGenerator(&zerohalfGen, translate[zerohalfMode], "ZeroHalf");
-    accuracyFlag[numberGenerators] = 5;
+    accuracyFlag[numberGenerators] = 2;   // exact CG cuts, comparable to MIR
     CglZeroHalf *storedZeroHalf =
       dynamic_cast<CglZeroHalf *>(babModel.cutGenerator(numberGenerators)->generator());
     if (storedZeroHalf)
@@ -496,7 +496,7 @@ void installCutGenerators(
       storedZeroHalf->setRowMaxFractionalCount(
         parameters[CbcParam::ZEROHALFROWMAXFRACTIONALCOUNT]->intVal());
     babModel.cutGenerator(numberGenerators)->setNeedsRefresh(true);
-    switches[numberGenerators++] = 2;
+    switches[numberGenerators++] = 0;   // switchOffIfLessThan=0: never disable based on cut count
   }
 
   if (dominatedCuts)
