@@ -5068,22 +5068,12 @@ int CbcSolver::postprocess(
           }
         }
       }
-      // try all slack (original master approach - always cold start)
-      {
-        CoinWarmStartBasis *basis = dynamic_cast< CoinWarmStartBasis * >(
-          babModel_->solver()->getEmptyWarmStart());
-        saveSolver_->setWarmStart(basis);
-        delete basis;
-        saveSolver_->initialSolve();
-#ifdef COIN_DEVELOP
-        saveSolver_->writeMps("inf2");
-#endif
-        OsiClpSolverInterface *osiclp = getClpSolver(saveSolver_);
-        if (CBC_SKIP_CLP_TEST||osiclp)
-          osiclp->getModelPtr()->checkUnscaledSolution();
-      }
-      // assert(saveSolver_->isProvenOptimal());
       // and original solver
+      // Note: saveSolver_->initialSolve() (cold-start LP) was previously here
+      // but its solution was never used — bestSolution comes from originalSolver
+      // below, and saveSolver_->getColLower/Upper() (copied to originalSolver)
+      // were already set by the integer-rounding block above, not by the LP solve.
+      // Removed to eliminate 100+ second cold-start LP on large instances.
       originalSolver->setDblParam(OsiDualObjectiveLimit,
         COIN_DBL_MAX);
       assert(n >= originalSolver->getNumCols());
@@ -5137,14 +5127,19 @@ int CbcSolver::postprocess(
     babModel_->deleteSolutions();
     babModel_->setBestSolution(
       bestSolution, n, babModel_->getMinimizationObjValue());
-    // and put back in very original solver
+    // Copy bestSolution back into originalSolver and fix integer bounds.
+    // A full LP re-solve here is not needed: the primal column/row solution
+    // and objective are overwritten unconditionally a few lines below
+    // (lpSolver->primalColumnSolution() = bestSolution, A*x for rows,
+    // lpSolver->setObjectiveValue(babModel_->getObjValue())).
+    // TODO: if dual values on the original model are ever needed (e.g. for
+    // sensitivity analysis after the solve), re-enable the resolve here.
     {
       ClpSimplex *original = originalSolver->getModelPtr();
       double *lower = original->columnLower();
       double *upper = original->columnUpper();
       double *solution = original->primalColumnSolution();
       int n = original->numberColumns();
-      // assert (!n||n==babModel_->solver()->getNumCols());
       for (int i = 0; i < n; i++) {
         solution[i] = bestSolution[i];
         if (originalSolver->isInteger(i)) {
@@ -5152,46 +5147,6 @@ int CbcSolver::postprocess(
           upper[i] = solution[i];
         }
       }
-      // basis
-      CoinWarmStartBasis *basis = dynamic_cast< CoinWarmStartBasis * >(
-        babModel_->solver()->getWarmStart());
-      originalSolver->setBasis(*basis);
-      delete basis;
-      originalSolver->setDblParam(OsiDualObjectiveLimit,
-        COIN_DBL_MAX);
-#ifdef COIN_HAS_LINK
-      if (originalSolver->getMatrixByCol())
-        originalSolver->setHintParam(OsiDoPresolveInResolve, true,
-          OsiHintTry);
-#else
-      originalSolver->setHintParam(OsiDoPresolveInResolve, true,
-        OsiHintTry);
-#endif
-      originalSolver->resolve();
-      if (!originalSolver->isProvenOptimal()) {
-        // try all slack
-        CoinWarmStartBasis *basis = dynamic_cast< CoinWarmStartBasis * >(
-          babModel_->solver()->getEmptyWarmStart());
-        originalSolver->setBasis(*basis);
-        delete basis;
-        originalSolver->initialSolve();
-        OsiClpSolverInterface *osiclp = getClpSolver(originalSolver);
-        if (CBC_SKIP_CLP_TEST||osiclp)
-          osiclp->getModelPtr()->checkUnscaledSolution();
-#ifdef CLP_INVESTIGATE
-        if (!originalSolver->isProvenOptimal()) {
-          if (saveSolver_) {
-            printf(
-              "saveSolver_ and originalSolver matrices saved\n");
-            saveSolver_->writeMps("infA");
-          } else {
-            printf("originalSolver matrix saved\n");
-            originalSolver->writeMps("infB");
-          }
-        }
-#endif
-      }
-      // assert(originalSolver->isProvenOptimal());
     }
     checkSOS(babModel_, babModel_->solver());
     if (ppLl >= 1) {
