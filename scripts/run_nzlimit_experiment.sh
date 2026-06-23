@@ -26,7 +26,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-BASE_OPTS="-maxNodes 1000000"
+BASE_OPTS="-maxNodes 10000000"
 
 COMMON=(
   --bin "$BIN"
