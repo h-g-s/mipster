@@ -352,7 +352,226 @@ def section_worst_instances(df: pd.DataFrame, console: Console, top_n: int) -> N
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Section 5: Per-instance cut breakdown (optional, verbose)
+# Section 5: Wasted cut time
+# ─────────────────────────────────────────────────────────────────────────────
+
+def section_wasted_cuts(df: pd.DataFrame, console: Console, top_n: int) -> None:
+    """
+    Two sub-tables:
+      A) Cut generators ranked by time-per-cut (lots of time, few cuts produced).
+         Only generators that actually ran (calls > 0) are included.
+      B) Per-instance top-N spotlight: for each generator with a high time-per-cut,
+         the worst individual instances (most time spent, 0 cuts produced).
+    """
+    # ── A: generator-level waste ranking ─────────────────────────────────────
+    gen_rows = []
+    for pfx, label in CUT_GENERATORS:
+        t     = _safe_sum(df, f"cut_{pfx}_time")
+        cuts  = _safe_sum(df, f"cut_{pfx}_cuts")
+        calls = _safe_sum(df, f"cut_{pfx}_calls")
+        if t <= 0 or calls <= 0:
+            continue
+        time_per_cut = t / cuts if cuts > 0 else float("inf")
+        zero_cut_instances = int(
+            ((_safe_col(df, f"cut_{pfx}_calls") > 0) &
+             (_safe_col(df, f"cut_{pfx}_cuts") == 0)).sum()
+        )
+        zero_cut_time = (
+            _safe_col(df, f"cut_{pfx}_time")[
+                (_safe_col(df, f"cut_{pfx}_calls") > 0) &
+                (_safe_col(df, f"cut_{pfx}_cuts") == 0)
+            ].sum()
+        )
+        gen_rows.append({
+            "label":             label,
+            "pfx":               pfx,
+            "time":              t,
+            "cuts":              int(cuts),
+            "calls":             int(calls),
+            "time_per_cut":      time_per_cut,
+            "zero_cut_insts":    zero_cut_instances,
+            "zero_cut_time":     zero_cut_time,
+        })
+
+    if not gen_rows:
+        return
+
+    # Sort by wasted time (time on instances where cuts=0)
+    gen_rows.sort(key=lambda r: r["zero_cut_time"], reverse=True)
+    max_wasted = gen_rows[0]["zero_cut_time"] if gen_rows else 1.0
+
+    table = Table(
+        title="⚠  Cut generators: time spent where no cuts were produced",
+        box=ROUNDED, header_style="bold cyan", show_lines=False,
+    )
+    table.add_column("Generator",      style="bold",    width=22)
+    table.add_column("Wasted time",    justify="right", width=13)
+    table.add_column("Bar",            width=20)
+    table.add_column("# Insts(0 cuts)", justify="right", width=14)
+    table.add_column("Total time",     justify="right", width=12)
+    table.add_column("Time/cut (s)",   justify="right", width=13)
+
+    for r in gen_rows[:top_n]:
+        wasted_frac = r["zero_cut_time"] / max_wasted if max_wasted > 0 else 0.0
+        tpc = r["time_per_cut"]
+        tpc_str = f"{tpc:.4f}" if tpc < float("inf") else "[bold red]∞[/bold red]"
+        waste_color = "red" if r["zero_cut_time"] > 60 else "yellow" if r["zero_cut_time"] > 5 else "dim"
+        table.add_row(
+            r["label"],
+            f"[{waste_color}]{fmt_time(r['zero_cut_time'])}[/{waste_color}]",
+            f"[red]{bar(wasted_frac)}[/red]",
+            f"{r['zero_cut_insts']:,}",
+            fmt_time(r["time"]),
+            tpc_str,
+        )
+
+    console.print(table)
+
+    # ── B: per-instance spotlight for top wasted generators ──────────────────
+    # Show top-3 generators by wasted time, each with their worst instances
+    spotlight_gens = [r for r in gen_rows if r["zero_cut_time"] > 0][:3]
+    for gen in spotlight_gens:
+        pfx   = gen["pfx"]
+        label = gen["label"]
+        t_col = f"cut_{pfx}_time"
+        c_col = f"cut_{pfx}_cuts"
+        k_col = f"cut_{pfx}_calls"
+
+        mask = (_safe_col(df, k_col) > 0) & (_safe_col(df, c_col) == 0)
+        sub = df[mask].copy()
+        if sub.empty:
+            continue
+        sub["_wt"] = _safe_col(sub, t_col)
+        worst = sub.nlargest(min(top_n, 8), "_wt")
+
+        inst_table = Table(
+            title=f"  ↳ {label}: top instances with 0 cuts, most time spent",
+            box=ROUNDED, header_style="bold red", show_lines=False,
+        )
+        inst_table.add_column("Instance",  style="bold", no_wrap=True)
+        inst_table.add_column("Time (wasted)", justify="right", width=15)
+        inst_table.add_column("Calls",        justify="right", width=8)
+        inst_table.add_column("Total time",   justify="right", width=12)
+
+        for _, r in worst.iterrows():
+            total_t = pd.to_numeric(r.get("time", 0), errors="coerce") or 0.0
+            inst_table.add_row(
+                str(r.get("instance", "?")),
+                f"[red]{fmt_time(r['_wt'])}[/red]",
+                f"{int(_safe_col(df.loc[[r.name]], k_col).iloc[0]):,}",
+                fmt_time(total_t),
+            )
+        console.print(inst_table)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Section 6: Wasted heuristic time
+# ─────────────────────────────────────────────────────────────────────────────
+
+def section_wasted_heuristics(df: pd.DataFrame, console: Console, top_n: int) -> None:
+    """
+    Two sub-tables:
+      A) Heuristics ranked by time spent on instances where they found 0 solutions.
+      B) Per-instance spotlight for the top wasted heuristics.
+    """
+    heur_rows = []
+    for pfx, label in HEURISTICS:
+        t     = _safe_sum(df, f"heur_{pfx}_time")
+        sols  = _safe_sum(df, f"heur_{pfx}_sols")
+        execs = _safe_sum(df, f"heur_{pfx}_execs")
+        if t <= 0 or execs <= 0:
+            continue
+
+        zero_sol_mask = (
+            (_safe_col(df, f"heur_{pfx}_execs") > 0) &
+            (_safe_col(df, f"heur_{pfx}_sols") == 0)
+        )
+        zero_sol_time = _safe_col(df, f"heur_{pfx}_time")[zero_sol_mask].sum()
+        zero_sol_insts = int(zero_sol_mask.sum())
+
+        heur_rows.append({
+            "label":          label,
+            "pfx":            pfx,
+            "time":           t,
+            "sols":           int(sols),
+            "execs":          int(execs),
+            "zero_sol_time":  zero_sol_time,
+            "zero_sol_insts": zero_sol_insts,
+            "time_per_sol":   t / sols if sols > 0 else float("inf"),
+        })
+
+    if not heur_rows:
+        return
+
+    heur_rows.sort(key=lambda r: r["zero_sol_time"], reverse=True)
+    max_wasted = heur_rows[0]["zero_sol_time"] if heur_rows else 1.0
+
+    table = Table(
+        title="⚠  Heuristics: time spent where no solution was found",
+        box=ROUNDED, header_style="bold cyan", show_lines=False,
+    )
+    table.add_column("Heuristic",       style="bold",    width=22)
+    table.add_column("Wasted time",     justify="right", width=13)
+    table.add_column("Bar",             width=20)
+    table.add_column("# Insts(0 sols)", justify="right", width=14)
+    table.add_column("Total time",      justify="right", width=12)
+    table.add_column("Time/sol (s)",    justify="right", width=13)
+
+    for r in heur_rows[:top_n]:
+        wasted_frac = r["zero_sol_time"] / max_wasted if max_wasted > 0 else 0.0
+        tps = r["time_per_sol"]
+        tps_str = fmt_time(tps) if tps < float("inf") else "[bold red]∞[/bold red]"
+        waste_color = "red" if r["zero_sol_time"] > 60 else "yellow" if r["zero_sol_time"] > 5 else "dim"
+        table.add_row(
+            r["label"],
+            f"[{waste_color}]{fmt_time(r['zero_sol_time'])}[/{waste_color}]",
+            f"[red]{bar(wasted_frac)}[/red]",
+            f"{r['zero_sol_insts']:,}",
+            fmt_time(r["time"]),
+            tps_str,
+        )
+
+    console.print(table)
+
+    # ── Per-instance spotlight for top wasted heuristics ─────────────────────
+    spotlight = [r for r in heur_rows if r["zero_sol_time"] > 0][:3]
+    for h in spotlight:
+        pfx   = h["pfx"]
+        label = h["label"]
+        t_col = f"heur_{pfx}_time"
+        s_col = f"heur_{pfx}_sols"
+        e_col = f"heur_{pfx}_execs"
+
+        mask = (_safe_col(df, e_col) > 0) & (_safe_col(df, s_col) == 0)
+        sub = df[mask].copy()
+        if sub.empty:
+            continue
+        sub["_wt"] = _safe_col(sub, t_col)
+        worst = sub.nlargest(min(top_n, 8), "_wt")
+
+        inst_table = Table(
+            title=f"  ↳ {label}: top instances with 0 solutions, most time spent",
+            box=ROUNDED, header_style="bold red", show_lines=False,
+        )
+        inst_table.add_column("Instance",      style="bold", no_wrap=True)
+        inst_table.add_column("Time (wasted)", justify="right", width=15)
+        inst_table.add_column("Executions",    justify="right", width=12)
+        inst_table.add_column("Total time",    justify="right", width=12)
+
+        for _, r in worst.iterrows():
+            total_t = pd.to_numeric(r.get("time", 0), errors="coerce") or 0.0
+            execs_val = int(_safe_col(df.loc[[r.name]], e_col).iloc[0])
+            inst_table.add_row(
+                str(r.get("instance", "?")),
+                f"[red]{fmt_time(r['_wt'])}[/red]",
+                f"{execs_val:,}",
+                fmt_time(total_t),
+            )
+        console.print(inst_table)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Section 7: Per-instance cut breakdown (optional, verbose)
 # ─────────────────────────────────────────────────────────────────────────────
 
 def section_cut_breakdown_by_instance(df: pd.DataFrame, console: Console, top_n: int) -> None:
@@ -457,6 +676,10 @@ def main() -> None:
     section_cuts(df, console, args.top)
     console.print()
     section_heuristics(df, console, args.top)
+    console.print()
+    section_wasted_cuts(df, console, args.top)
+    console.print()
+    section_wasted_heuristics(df, console, args.top)
     console.print()
     section_worst_instances(df, console, args.top)
 
