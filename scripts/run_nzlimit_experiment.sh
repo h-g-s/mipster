@@ -26,6 +26,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+BASE_OPTS="-maxNodes 1000000"
+
 COMMON=(
   --bin "$BIN"
   --instances "$INSTANCES"
@@ -33,7 +35,6 @@ COMMON=(
   --timelimit "$TIMELIMIT"
   --threads 1
   --overtime-grace "$OVERTIME_GRACE"
-  --opts "-maxNodes 1000000"
 )
 
 declare -A CONDITIONS=(
@@ -52,17 +53,15 @@ for cond in "${ORDER[@]}"; do
   idx=$((idx + 1))
   opts="${CONDITIONS[$cond]}"
   outdir="$OUTBASE/$cond"
+  # Merge base opts with condition-specific opts into a single --opts argument
+  merged_opts="$BASE_OPTS${opts:+ $opts}"
   echo ""
   echo "══════════════════════════════════════════════════════════"
   echo "  Condition $idx/$total: $cond"
-  [[ -n "$opts" ]] && echo "  Extra opts: $opts"
+  echo "  Opts: $merged_opts"
   echo "  Output: $outdir"
   echo "══════════════════════════════════════════════════════════"
-  if [[ -n "$opts" ]]; then
-    "$RUN_EXP" "${COMMON[@]}" --opts "$opts" --outdir "$outdir"
-  else
-    "$RUN_EXP" "${COMMON[@]}" --outdir "$outdir"
-  fi
+  "$RUN_EXP" "${COMMON[@]}" --opts "$merged_opts" --outdir "$outdir"
 done
 
 echo ""
