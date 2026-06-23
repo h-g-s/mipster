@@ -111,6 +111,7 @@ TESTS=(
   CInterfaceTest_j3041_1
   CInterfaceTest_yue20013
   CInterfaceTest_etDecsi
+  CInterfaceTest_dano3_3
   CbcSolverLpTest
   CInterfaceTest_advanced
   CInterfaceTest_colgen
