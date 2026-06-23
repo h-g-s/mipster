@@ -103,7 +103,7 @@ POST_UNINSTALL = :
 build_triplet = @build@
 host_triplet = @host@
 bin_PROGRAMS = mipster$(EXEEXT) mipster_diag$(EXEEXT) \
-	mipster_validate_sol$(EXEEXT)
+	mipster_validate_sol$(EXEEXT) mipster_bp_bench$(EXEEXT)
 subdir = src
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/BuildTools/coin.m4 \
@@ -248,6 +248,10 @@ am_mipster_validate_sol_OBJECTS =  \
 	mipster_validate_sol-mipster_validate_sol.$(OBJEXT)
 mipster_validate_sol_OBJECTS = $(am_mipster_validate_sol_OBJECTS)
 mipster_validate_sol_DEPENDENCIES = libmipster.la
+am_mipster_bp_bench_OBJECTS =  \
+	mipster_bp_bench-mipster_bp_bench.$(OBJEXT)
+mipster_bp_bench_OBJECTS = $(am_mipster_bp_bench_OBJECTS)
+mipster_bp_bench_DEPENDENCIES = libmipster.la
 AM_V_P = $(am__v_P_@AM_V@)
 am__v_P_ = $(am__v_P_@AM_DEFAULT_V@)
 am__v_P_0 = false
@@ -356,7 +360,8 @@ am__depfiles_remade = ./$(DEPDIR)/libmipster_la-CbcBab.Plo \
 	./$(DEPDIR)/libmipster_la-unitTestClp.Plo \
 	./$(DEPDIR)/mipster-CoinSolve.Po \
 	./$(DEPDIR)/mipster_diag-mipster_diag.Po \
-	./$(DEPDIR)/mipster_validate_sol-mipster_validate_sol.Po
+	./$(DEPDIR)/mipster_validate_sol-mipster_validate_sol.Po \
+	./$(DEPDIR)/mipster_bp_bench-mipster_bp_bench.Po
 am__mv = mv -f
 CXXCOMPILE = $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) \
 	$(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS)
@@ -395,7 +400,8 @@ am__v_CCLD_ = $(am__v_CCLD_@AM_DEFAULT_V@)
 am__v_CCLD_0 = @echo "  CCLD    " $@;
 am__v_CCLD_1 = 
 SOURCES = $(libmipster_la_SOURCES) $(mipster_SOURCES) \
-	$(mipster_diag_SOURCES) $(mipster_validate_sol_SOURCES)
+	$(mipster_diag_SOURCES) $(mipster_validate_sol_SOURCES) \
+	$(mipster_bp_bench_SOURCES)
 RECURSIVE_TARGETS = all-recursive check-recursive cscopelist-recursive \
 	ctags-recursive dvi-recursive html-recursive info-recursive \
 	install-data-recursive install-dvi-recursive \
@@ -725,6 +731,9 @@ mipster_diag_CPPFLAGS = $(CBCLIB_CFLAGS) -I$(srcdir)/CoinUtils -I$(srcdir)/Clp -
 mipster_validate_sol_SOURCES = mipster_validate_sol.cpp
 mipster_validate_sol_LDADD = libmipster.la
 mipster_validate_sol_CPPFLAGS = $(CBCLIB_CFLAGS) -I$(srcdir)/CoinUtils -I$(srcdir)/Clp -I$(srcdir)/Cgl
+mipster_bp_bench_SOURCES = mipster_bp_bench.cpp
+mipster_bp_bench_LDADD = libmipster.la
+mipster_bp_bench_CPPFLAGS = $(CBCLIB_CFLAGS) -I$(srcdir)/CoinUtils -I$(srcdir)/Clp -I$(srcdir)/Cgl
 
 ########################################################################
 #                            Additional flags                          #
@@ -980,6 +989,10 @@ mipster_validate_sol$(EXEEXT): $(mipster_validate_sol_OBJECTS) $(mipster_validat
 	@rm -f mipster_validate_sol$(EXEEXT)
 	$(AM_V_CXXLD)$(CXXLINK) $(mipster_validate_sol_OBJECTS) $(mipster_validate_sol_LDADD) $(LIBS)
 
+mipster_bp_bench$(EXEEXT): $(mipster_bp_bench_OBJECTS) $(mipster_bp_bench_DEPENDENCIES) $(EXTRA_mipster_bp_bench_DEPENDENCIES) 
+	@rm -f mipster_bp_bench$(EXEEXT)
+	$(AM_V_CXXLD)$(CXXLINK) $(mipster_bp_bench_OBJECTS) $(mipster_bp_bench_LDADD) $(LIBS)
+
 mostlyclean-compile:
 	-rm -f *.$(OBJEXT)
 
@@ -1080,6 +1093,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mipster-CoinSolve.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mipster_diag-mipster_diag.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mipster_validate_sol-mipster_validate_sol.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mipster_bp_bench-mipster_bp_bench.Po@am__quote@ # am--include-marker
 
 $(am__depfiles_remade):
 	@$(MKDIR_P) $(@D)
@@ -1789,6 +1803,20 @@ mipster_validate_sol-mipster_validate_sol.obj: mipster_validate_sol.cpp
 @AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='mipster_validate_sol.cpp' object='mipster_validate_sol-mipster_validate_sol.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(mipster_validate_sol_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o mipster_validate_sol-mipster_validate_sol.obj `if test -f 'mipster_validate_sol.cpp'; then $(CYGPATH_W) 'mipster_validate_sol.cpp'; else $(CYGPATH_W) '$(srcdir)/mipster_validate_sol.cpp'; fi`
+
+mipster_bp_bench-mipster_bp_bench.o: mipster_bp_bench.cpp
+@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(mipster_bp_bench_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT mipster_bp_bench-mipster_bp_bench.o -MD -MP -MF $(DEPDIR)/mipster_bp_bench-mipster_bp_bench.Tpo -c -o mipster_bp_bench-mipster_bp_bench.o `test -f 'mipster_bp_bench.cpp' || echo '$(srcdir)/'`mipster_bp_bench.cpp
+@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/mipster_bp_bench-mipster_bp_bench.Tpo $(DEPDIR)/mipster_bp_bench-mipster_bp_bench.Po
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='mipster_bp_bench.cpp' object='mipster_bp_bench-mipster_bp_bench.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(mipster_bp_bench_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o mipster_bp_bench-mipster_bp_bench.o `test -f 'mipster_bp_bench.cpp' || echo '$(srcdir)/'`mipster_bp_bench.cpp
+
+mipster_bp_bench-mipster_bp_bench.obj: mipster_bp_bench.cpp
+@am__fastdepCXX_TRUE@	$(AM_V_CXX)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(mipster_bp_bench_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -MT mipster_bp_bench-mipster_bp_bench.obj -MD -MP -MF $(DEPDIR)/mipster_bp_bench-mipster_bp_bench.Tpo -c -o mipster_bp_bench-mipster_bp_bench.obj `if test -f 'mipster_bp_bench.cpp'; then $(CYGPATH_W) 'mipster_bp_bench.cpp'; else $(CYGPATH_W) '$(srcdir)/mipster_bp_bench.cpp'; fi`
+@am__fastdepCXX_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/mipster_bp_bench-mipster_bp_bench.Tpo $(DEPDIR)/mipster_bp_bench-mipster_bp_bench.Po
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	$(AM_V_CXX)source='mipster_bp_bench.cpp' object='mipster_bp_bench-mipster_bp_bench.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCXX_FALSE@	DEPDIR=$(DEPDIR) $(CXXDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCXX_FALSE@	$(AM_V_CXX@am__nodep@)$(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(mipster_bp_bench_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS) -c -o mipster_bp_bench-mipster_bp_bench.obj `if test -f 'mipster_bp_bench.cpp'; then $(CYGPATH_W) 'mipster_bp_bench.cpp'; else $(CYGPATH_W) '$(srcdir)/mipster_bp_bench.cpp'; fi`
 
 mostlyclean-libtool:
 	-rm -f *.lo
