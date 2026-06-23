@@ -1234,8 +1234,11 @@ int CbcSolver::applyLpMethod(bool applyPreprocessing)
       const int logLevel = model_.messageHandler()->logLevel();
 
       CbcBoundPropagation bp;
+      // MIPSTER_FBBT=1 enables FBBT as phase 3 after the binary fixpoint.
+      // Used for experimental comparison; will be a proper parameter later.
+      const bool enableFBBT = (getenv("MIPSTER_FBBT") != nullptr);
       if (!bp.run(solver, model_.messageHandler(), logLevel,
-            bpLevel, maxRounds, timeLimit, startTime)) {
+            bpLevel, maxRounds, timeLimit, startTime, enableFBBT)) {
         statistics_.result = "Problem proven infeasible";
         statistics_.seconds = CoinCpuTime();
         statistics_.elapsed_seconds = CoinWallclockTime();
