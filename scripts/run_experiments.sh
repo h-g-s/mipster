@@ -854,6 +854,7 @@ run_instance() {
 
     [[ "$_csv_int_feas" == "1" ]] && obj="$_csv_obj"
     [[ "$_csv_result" == *"time limit"* ]] && timed_out=1
+    [[ "$_csv_result" == *"node limit"* ]] && timed_out=1
     if [[ "$_csv_result" == "Problem proven infeasible" \
        || "$_csv_result" == "Linear relaxation infeasible" ]]; then
       proven_infeasible=1
@@ -869,7 +870,7 @@ run_instance() {
     [[ -z "$obj" ]] && \
       obj=$("$GREP_CMD" -iP '^objective:?\s' "$logfile" \
             | "$GREP_CMD" -oP '[-\d.eE+]+$' | tail -1 || true)
-    grep -qi "time limit\|stopped on time" "$logfile" 2>/dev/null && timed_out=1
+    grep -qi "time limit\|stopped on time\|node limit" "$logfile" 2>/dev/null && timed_out=1
     grep -qi '^No feasible solution found' "$logfile" 2>/dev/null && no_feasible_solution=1
     "$GREP_CMD" -qiP "Result - (Problem proven infeasible|Linear relaxation infeasible)|Problem is infeasible|Fast preprocessing: infeasibility proved|Bound propagation: infeasibility proved" \
       "$logfile" 2>/dev/null && proven_infeasible=1
