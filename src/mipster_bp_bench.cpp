@@ -2,6 +2,7 @@
  * mipster_bp_bench — bound propagation benchmark for a single MIP instance
  *
  * Loads a problem, runs CbcBoundPropagation at the requested aggression level,
+ * optionally followed by FBBT (Feasibility-Based Bounds Tightening),
  * and emits one CSV row with timing and effectiveness statistics.
  *
  * Designed for parallel execution driven by an external script:
@@ -19,6 +20,7 @@
  * Options:
  *   --level <singletons|milpbt|fixpoint>   Aggression level (default: fixpoint)
  *   --max-rounds <N>                        Max BP rounds for milpbt (default: 100)
+ *   --fbbt                                  Enable FBBT phase after binary fixpoint
  *   --no-header                             Suppress CSV header line
  *   --header-only                           Print CSV header and exit (no instance needed)
  *
@@ -31,6 +33,7 @@
  *   singleton_fixed  Variables fully fixed by the singleton-row pass
  *   singleton_tight  Variables tightened (not fixed) by the singleton-row pass
  *   bp_fixed         Variables fixed by CoinBoundPropagation rounds
+ *   fbbt_tightened   Variables with at least one bound tightened by FBBT
  *   total_fixed      singleton_fixed + bp_fixed
  *   total_tight      singleton_tight (non-fixed tightenings from singleton pass)
  *   rounds           Number of CoinBoundPropagation rounds executed
@@ -100,7 +103,7 @@ static void silenceEnd()
 
 static const char *CSV_HEADER =
   "instance,ncols,nrows,nbin,nint,"
-  "singleton_fixed,singleton_tight,bp_fixed,"
+  "singleton_fixed,singleton_tight,bp_fixed,fbbt_tightened,"
   "total_fixed,total_tight,rounds,"
   "stop_reason,infeasible,time_sec,level";
 
@@ -159,6 +162,7 @@ int main(int argc, char *argv[])
   CbcBoundPropagation::Level level = CbcBoundPropagation::Fixpoint;
   const char *levelStr = "fixpoint";
   int maxRounds = 100;
+  bool enableFBBT = false;
   bool printHeader = true;
   bool headerOnly = false;
   const char *problemFile = nullptr;
@@ -187,6 +191,8 @@ int main(int argc, char *argv[])
         fprintf(stderr, "Error: unknown level '%s' (expected: singletons, milpbt, fixpoint)\n", argv[i]);
         return 2;
       }
+    } else if (strcmp(argv[i], "--fbbt") == 0) {
+      enableFBBT = true;
     } else if (strcmp(argv[i], "--max-rounds") == 0) {
       if (i + 1 >= argc) {
         fprintf(stderr, "Error: --max-rounds requires an argument\n");
@@ -261,12 +267,14 @@ int main(int argc, char *argv[])
   CbcBoundPropagation bp;
   const double t0 = CoinGetTimeOfDay();
   bp.run(solver, /*handler=*/nullptr, /*logLevel=*/0,
-    level, maxRounds, /*timeLimit=*/1e100, /*startTime=*/t0);
+    level, maxRounds, /*timeLimit=*/1e100, /*startTime=*/t0,
+    enableFBBT);
   const double elapsed = CoinGetTimeOfDay() - t0;
 
   const int singletonFixed = bp.nSingletonFixed();
   const int singletonTight = bp.nSingletonTightened();
   const int bpFixed = bp.nBoundPropFixed();
+  const int fbbtTightened = bp.nFBBTTightened();
   const int totalFixed = bp.nFixed();
   const int rounds = bp.nRoundsRun();
   const int infeasible = bp.stopReason() == CbcBoundPropagation::InfeasibleDetected ? 1 : 0;
@@ -277,11 +285,11 @@ int main(int argc, char *argv[])
   if (printHeader)
     printf("%s\n", CSV_HEADER);
 
-  printf("%s,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%s,%d,%.6f,%s\n",
+  printf("%s,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%s,%d,%.6f,%s\n",
     instanceBasename(problemFile).c_str(),
     ncols, nrows, nbin, nint,
     singletonFixed, singletonTight,
-    bpFixed,
+    bpFixed, fbbtTightened,
     totalFixed, singletonTight,
     rounds,
     stopReason, infeasible,
