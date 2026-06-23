@@ -33,6 +33,7 @@ COMMON=(
   --timelimit "$TIMELIMIT"
   --threads 1
   --overtime-grace "$OVERTIME_GRACE"
+  --opts "-maxNodes 1000000"
 )
 
 declare -A CONDITIONS=(
