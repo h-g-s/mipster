@@ -33,12 +33,15 @@ if [[ "${1:-}" == "--run-one" ]]; then
 
   t0=$SECONDS
   if [[ "$cond" == "C1" ]]; then
-    env MIPSTER_FBBT=1 "$mipster" "$inst_path" \
+    # C1: FBBT always on (root + nodes via nodeBoundProp)
+    "$mipster" "$inst_path" \
         -sec "$time_limit" -maxNodes "$node_limit" \
         -solu "$sol" -solve > "$log" 2>&1 || true
   else
+    # C0: FBBT at root only (node-level BP disabled)
     "$mipster" "$inst_path" \
         -sec "$time_limit" -maxNodes "$node_limit" \
+        -nodeBoundProp off \
         -solu "$sol" -solve > "$log" 2>&1 || true
   fi
   elapsed=$(( SECONDS - t0 ))
@@ -162,8 +165,8 @@ c1 = read_dir(f"{out_dir}/C1_fbbt")
 common = sorted(c0.keys() & c1.keys())
 
 w = 45
-hdr = (f"{'Instance':<{w}} {'C0_status':>10} {'C0_obj':>16} {'C0_t(s)':>7} {'C0_nodes':>8}"
-       f"  {'C1_status':>10} {'C1_obj':>16} {'C1_t(s)':>7} {'C1_nodes':>8}  {'match':>14}  {'speedup':>7}")
+hdr = (f"{'Instance':<{w}} {'C0_noNodeBP':>10} {'C0_obj':>16} {'C0_t(s)':>7} {'C0_nodes':>8}"
+       f"  {'C1_fbbtNode':>10} {'C1_obj':>16} {'C1_t(s)':>7} {'C1_nodes':>8}  {'match':>14}  {'speedup':>7}")
 print(hdr)
 print('-' * len(hdr))
 
