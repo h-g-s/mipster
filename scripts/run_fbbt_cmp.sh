@@ -8,8 +8,79 @@
 #
 # Usage: ./run_fbbt_cmp.sh [--instances FILE] [--out DIR] [--sec N] [--nodes N] [--jobs N]
 #
+# Single-job mode (called by parallel internally):
+#   ./run_fbbt_cmp.sh --run-one INST COND OUT_DIR TIME_LIMIT NODE_LIMIT MIPSTER_BIN
+#
 set -euo pipefail
 
+SCRIPT_PATH="$(realpath "$0")"
+
+# ── Single-job mode ────────────────────────────────────────────────────────
+# When parallel calls us with --run-one, execute one solve and exit.
+if [[ "${1:-}" == "--run-one" ]]; then
+  inst_path="$2"
+  cond="$3"
+  out_dir="$4"
+  time_limit="$5"
+  node_limit="$6"
+  mipster="$7"
+
+  name=$(basename "$inst_path" .mps.gz)
+  name=$(basename "$name" .lp.gz)
+  log="$out_dir/$name.log"
+  sol="$out_dir/$name.sol"
+  result="$out_dir/$name.result"
+
+  t0=$SECONDS
+  if [[ "$cond" == "C1" ]]; then
+    env MIPSTER_FBBT=1 "$mipster" "$inst_path" \
+        -sec "$time_limit" -maxNodes "$node_limit" \
+        -solu "$sol" -solve > "$log" 2>&1 || true
+  else
+    "$mipster" "$inst_path" \
+        -sec "$time_limit" -maxNodes "$node_limit" \
+        -solu "$sol" -solve > "$log" 2>&1 || true
+  fi
+  elapsed=$(( SECONDS - t0 ))
+
+  status="UNKNOWN"
+  obj="NA"
+  bound="NA"
+  nodes="NA"
+
+  if grep -q "Result - Optimal solution found" "$log" 2>/dev/null; then
+    status="OPTIMAL"
+  elif grep -q "Result - Stopped on time" "$log" 2>/dev/null; then
+    status="TIMELIMIT"
+  elif grep -q "Result - Infeasible" "$log" 2>/dev/null; then
+    status="INFEASIBLE"
+  elif grep -q "infeasibility proved" "$log" 2>/dev/null; then
+    status="INFEASIBLE"
+  elif grep -q "Result - Node limit" "$log" 2>/dev/null; then
+    status="NODELIMIT"
+  fi
+
+  obj=$(grep "Objective value:" "$log" 2>/dev/null \
+        | awk '{print $NF}' | head -1 || true)
+  [[ -z "$obj" ]] && obj="NA"
+
+  last_tick=$(grep "^✔" "$log" 2>/dev/null | tail -1 || true)
+  if [[ -n "$last_tick" ]]; then
+    bound=$(echo "$last_tick" | grep -oP 'Bound:\s*\K[0-9.eE+\-]+' || true)
+    nodes=$(echo "$last_tick" | grep -oP 'Nodes:\s*\K[0-9.KM]+' || true)
+  fi
+  [[ -z "$bound" ]] && bound="NA"
+  [[ -z "$nodes" ]] && nodes="NA"
+
+  printf "%s\t%s\t%s\t%d\t%s\n" \
+    "$status" "$obj" "$bound" "$elapsed" "$nodes" > "$result"
+
+  printf "[%s] %-4s %-45s  %-12s  obj=%-18s  t=%ds  nodes=%s\n" \
+    "$(date +%H:%M:%S)" "$cond" "$name" "$status" "$obj" "$elapsed" "$nodes"
+  exit 0
+fi
+
+# ── Orchestrator mode ──────────────────────────────────────────────────────
 INST_DIR="${MIPSTER_INSTANCES:-$HOME/inst/miplib/2017+spp}"
 OUT_DIR=""
 TIME_LIMIT=10800
@@ -32,9 +103,8 @@ done
   OUT_DIR="${MIPSTER_EXPERIMENTS:-$HOME/experiments/cbc}/fbbt_cmp_$(date +%Y_%m_%d)"
 mkdir -p "$OUT_DIR/C0_baseline" "$OUT_DIR/C1_fbbt"
 
-MIPSTER_BIN="${MIPSTER_BIN:-mipster}"
+MIPSTER_BIN="$(command -v "${MIPSTER_BIN:-mipster}")"
 
-# ── Instance list ──────────────────────────────────────────────────────────
 if [[ -n "$INSTANCES_FILE" ]]; then
   mapfile -t INSTANCES < "$INSTANCES_FILE"
 else
@@ -45,104 +115,24 @@ echo "Instances  : ${#INSTANCES[@]}"
 echo "Time limit : ${TIME_LIMIT}s"
 echo "Node limit : ${NODE_LIMIT}"
 echo "Jobs       : ${JOBS}"
+echo "Mipster    : ${MIPSTER_BIN}"
 echo "Output     : $OUT_DIR"
 echo "Started    : $(date)"
 echo ""
 
-# ── run_one: fully self-contained solver + result writer ───────────────────
-# Written to each wrapper script via 'declare -f run_one' so no external
-# function dependency exists when bash runs the wrapper.
-
-run_one() {
-  local inst_path="$1"
-  local cond="$2"        # C0 or C1
-  local out_dir="$3"
-  local time_limit="$4"
-  local node_limit="$5"
-  local mipster="$6"
-
-  local name
-  name=$(basename "$inst_path" .mps.gz)
-  name=$(basename "$name" .lp.gz)
-  local log="$out_dir/$name.log"
-  local sol="$out_dir/$name.sol"
-  local result="$out_dir/$name.result"
-
-  local t0=$SECONDS
-  if [[ "$cond" == "C1" ]]; then
-    env MIPSTER_FBBT=1 "$mipster" "$inst_path" \
-        -sec "$time_limit" -maxNodes "$node_limit" \
-        -solu "$sol" -solve > "$log" 2>&1 || true
-  else
-    "$mipster" "$inst_path" \
-        -sec "$time_limit" -maxNodes "$node_limit" \
-        -solu "$sol" -solve > "$log" 2>&1 || true
-  fi
-  local elapsed=$(( SECONDS - t0 ))
-
-  # Parse log
-  local status="UNKNOWN"
-  local obj="NA"
-  local bound="NA"
-  local nodes="NA"
-
-  if grep -q "Result - Optimal solution found" "$log" 2>/dev/null; then
-    status="OPTIMAL"
-  elif grep -q "Result - Stopped on time" "$log" 2>/dev/null; then
-    status="TIMELIMIT"
-  elif grep -q "Result - Infeasible" "$log" 2>/dev/null; then
-    status="INFEASIBLE"
-  elif grep -q "infeasibility proved" "$log" 2>/dev/null; then
-    status="INFEASIBLE"
-  elif grep -q "Result - Node limit" "$log" 2>/dev/null; then
-    status="NODELIMIT"
-  fi
-
-  obj=$(grep "Objective value:" "$log" 2>/dev/null \
-        | awk '{print $NF}' | head -1 || true)
-  [[ -z "$obj" ]] && obj="NA"
-
-  local last_tick
-  last_tick=$(grep "^✔" "$log" 2>/dev/null | tail -1 || true)
-  if [[ -n "$last_tick" ]]; then
-    bound=$(echo "$last_tick" \
-            | grep -oP 'Bound:\s*\K[0-9.eE+\-]+' || true)
-    nodes=$(echo "$last_tick" \
-            | grep -oP 'Nodes:\s*\K[0-9.KM]+' || true)
-  fi
-  [[ -z "$bound" ]] && bound="NA"
-  [[ -z "$nodes" ]] && nodes="NA"
-
-  printf "%s\t%s\t%s\t%d\t%s\n" \
-    "$status" "$obj" "$bound" "$elapsed" "$nodes" > "$result"
-
-  printf "[%s] %-4s %-45s  %-12s  obj=%-18s  t=%ds  nodes=%s\n" \
-    "$(date +%H:%M:%S)" "$cond" "$name" "$status" "$obj" "$elapsed" "$nodes"
-}
-
-# ── Generate fully self-contained wrapper scripts ─────────────────────────
-JOB_DIR=$(mktemp -d)
-trap 'rm -rf "$JOB_DIR"' EXIT
-
+# Build job list: each line = one call to --run-one with all args
+JOB_ARGS=()
 for inst in "${INSTANCES[@]}"; do
-  for cond in C0 C1; do
-    [[ "$cond" == "C0" ]] && out_sub="$OUT_DIR/C0_baseline" \
-                           || out_sub="$OUT_DIR/C1_fbbt"
-    job="$JOB_DIR/$(basename "$inst" .mps.gz)_${cond}.sh"
-    {
-      echo "#!/usr/bin/env bash"
-      declare -f run_one          # embed full function definition
-      printf 'run_one %q %s %q %d %d %q\n' \
-        "$inst" "$cond" "$out_sub" "$TIME_LIMIT" "$NODE_LIMIT" "$MIPSTER_BIN"
-    } > "$job"
-    chmod +x "$job"
-  done
+  JOB_ARGS+=("$inst C0 $OUT_DIR/C0_baseline $TIME_LIMIT $NODE_LIMIT $MIPSTER_BIN")
+  JOB_ARGS+=("$inst C1 $OUT_DIR/C1_fbbt $TIME_LIMIT $NODE_LIMIT $MIPSTER_BIN")
 done
 
-total=$(ls "$JOB_DIR"/*.sh | wc -l)
+total=${#JOB_ARGS[@]}
 echo "Total jobs : $total"
 
-parallel --no-notice -j "$JOBS" bash {} ::: "$JOB_DIR"/*.sh \
+printf '%s\n' "${JOB_ARGS[@]}" | \
+  parallel --no-notice -j "$JOBS" --colsep ' ' \
+    "$SCRIPT_PATH" --run-one {1} {2} {3} {4} {5} {6} \
   2>"$OUT_DIR/parallel.log" || true
 
 echo ""
