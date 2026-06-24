@@ -162,7 +162,6 @@ int main(int argc, char *argv[])
   CbcBoundPropagation::Level level = CbcBoundPropagation::Fixpoint;
   const char *levelStr = "fixpoint";
   int maxRounds = 100;
-  bool enableFBBT = false;
   bool printHeader = true;
   bool headerOnly = false;
   const char *problemFile = nullptr;
@@ -192,7 +191,7 @@ int main(int argc, char *argv[])
         return 2;
       }
     } else if (strcmp(argv[i], "--fbbt") == 0) {
-      enableFBBT = true;
+      // FBBT is now always enabled; flag accepted for compatibility but ignored.
     } else if (strcmp(argv[i], "--max-rounds") == 0) {
       if (i + 1 >= argc) {
         fprintf(stderr, "Error: --max-rounds requires an argument\n");
@@ -267,8 +266,7 @@ int main(int argc, char *argv[])
   CbcBoundPropagation bp;
   const double t0 = CoinGetTimeOfDay();
   bp.run(solver, /*handler=*/nullptr, /*logLevel=*/0,
-    level, maxRounds, /*timeLimit=*/1e100, /*startTime=*/t0,
-    enableFBBT);
+    level, maxRounds, /*timeLimit=*/1e100, /*startTime=*/t0);
   const double elapsed = CoinGetTimeOfDay() - t0;
 
   const int singletonFixed = bp.nSingletonFixed();

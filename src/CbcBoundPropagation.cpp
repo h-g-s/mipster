@@ -41,8 +41,7 @@ bool CbcBoundPropagation::run(OsiSolverInterface *solver,
   Level level,
   int maxRounds,
   double timeLimit,
-  double startTime,
-  bool enableFBBT)
+  double startTime)
 {
   assert(level != Off);
 
@@ -307,9 +306,9 @@ bool CbcBoundPropagation::run(OsiSolverInterface *solver,
   }
 
   // ---------------------------------------------------------------
-  // Phase 3 (optional): FBBT — tighten general integer and continuous bounds
+  // Phase 3: FBBT — tighten general integer and continuous bounds
   // ---------------------------------------------------------------
-  if (enableFBBT && stopReason_ != InfeasibleDetected) {
+  if (stopReason_ != InfeasibleDetected) {
     // Refresh colType from current bounds (binaries may have been fixed).
     refreshColType();
 

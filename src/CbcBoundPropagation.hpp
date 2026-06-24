@@ -79,12 +79,6 @@ public:
    * \param timeLimit  Budget in seconds; use a large value to disable.
    * \param startTime  Reference elapsed time measured before calling run().
    *                   measured BEFORE calling run().
-   * \param enableFBBT If true, run one Feasibility-Based Bounds Tightening
-   *                   (FBBT) pass after the binary fixpoint as phase 3.
-   *                   Tightens bounds of all variable types (general integer,
-   *                   continuous, free).  Default false; should only be enabled
-   *                   at root level — NOT at B&B nodes.
-   *
    * \return true if the problem is (still) feasible, false if infeasibility
    *         was proved during bound propagation.
    */
@@ -94,8 +88,7 @@ public:
     Level level,
     int maxRounds,
     double timeLimit,
-    double startTime,
-    bool enableFBBT = false);
+    double startTime);
 
   /// Number of variables with at least one bound tightened by FBBT phase.
   int nFBBTTightened() const { return nFBBTTightened_; }
