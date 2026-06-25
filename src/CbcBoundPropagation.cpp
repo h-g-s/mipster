@@ -5,7 +5,6 @@
 #include "CbcBoundPropagation.hpp"
 
 #include "CoinBoundPropagation.hpp"
-#include "CoinFBBT.hpp"
 #include "CoinMessageHandler.hpp"
 #include "CoinTime.hpp"
 #include "OsiRowCutDebugger.hpp"
@@ -266,9 +265,13 @@ bool CbcBoundPropagation::run(OsiSolverInterface *solver,
       return false;
     }
 
-    // Apply the fixings from this round to curLB/curUB and to the solver
+    // Apply the fixings from this round to curLB/curUB and to the solver.
+    // newBounds_ contains binary fixings (first) then FBBT tightenings (appended
+    // at end of constructor), but we apply all in one loop.
     const auto &bounds = bt.updatedBounds();
     const int nNew = static_cast< int >(bounds.size());
+    const int nFBBT = bt.nContinuousTightened();
+    const int nFixed = nNew - nFBBT;
 
     if (nNew == 0) {
       stopReason_ = ReachedFixpoint;
@@ -292,12 +295,13 @@ bool CbcBoundPropagation::run(OsiSolverInterface *solver,
       solver->setColUpper(col, p.second.second);
     }
 
-    nBoundPropFixed_ += nNew;
+    nBoundPropFixed_ += nFixed;
+    nFBBTTightened_ += nFBBT;
 
     if (logLevel >= 2)
-      printf("  Bound propagation: round %d fixed %d variables "
-             "(total %d).\n",
-        nRoundsRun_, nNew, nBoundPropFixed_);
+      printf("  Bound propagation: round %d fixed %d vars, FBBT tightened %d"
+             " (total fixed %d).\n",
+        nRoundsRun_, nFixed, nFBBT, nBoundPropFixed_);
   }
 
   if (stopReason_ == NotRun) {
@@ -305,62 +309,12 @@ bool CbcBoundPropagation::run(OsiSolverInterface *solver,
     stopReason_ = HitMaxRounds;
   }
 
-  // ---------------------------------------------------------------
-  // Phase 3: FBBT — tighten general integer and continuous bounds
-  // ---------------------------------------------------------------
-  if (stopReason_ != InfeasibleDetected) {
-    // Refresh colType from current bounds (binaries may have been fixed).
-    refreshColType();
-
-    // Pre-compute per-column flags.
-    std::vector< uint8_t > colFlagsVec(static_cast< size_t >(nCols));
-    CoinFBBT::buildColFlags(
-      nCols, colType,
-      curLB.data(), curUB.data(),
-      infinity, colFlagsVec.data());
-
-    CoinFBBT fbbt(
-      nCols, colFlagsVec.data(),
-      curLB.data(), curUB.data(),
-      matByRow, rowSense, rhs, range,
-      primalTol, infinity);
-
-    if (fbbt.isInfeasible()) {
-      infeasibleRow_ = fbbt.infeasibleRow();
-      infeasibleCol_ = -1;
-      stopReason_ = InfeasibleDetected;
-      timeUsed_ = (CoinGetTimeOfDay()) - t0;
-
-      if (logLevel >= 1)
-        printf("  Bound propagation (FBBT): INFEASIBLE in row %d, %.3f s.\n",
-          infeasibleRow_, timeUsed_);
-
-      return false;
-    }
-
-    const auto &fbbtBounds = fbbt.updatedBounds();
-    nFBBTTightened_ = static_cast< int >(fbbtBounds.size());
-
-    for (const auto &p : fbbtBounds) {
-      const int col = p.first;
-      checkFixing(col, p.second.first, p.second.second, "fbbt");
-      curLB[col] = p.second.first;
-      curUB[col] = p.second.second;
-      solver->setColLower(col, p.second.first);
-      solver->setColUpper(col, p.second.second);
-    }
-
-    if (logLevel >= 2 && nFBBTTightened_ > 0)
-      printf("  Bound propagation (FBBT): tightened %d variable bounds.\n",
-        nFBBTTightened_);
-  }
-
   timeUsed_ = (CoinGetTimeOfDay()) - t0;
 
   if (logLevel >= 1) {
     const int totalFixed = nSingletonFixed_ + nBoundPropFixed_;
-    printf("  Bound propagation fixed %d vars in %.3f s.\n",
-      totalFixed, timeUsed_);
+    printf("  Bound propagation fixed %d vars, FBBT tightened %d in %.3f s.\n",
+      totalFixed, nFBBTTightened_, timeUsed_);
   }
 
   return true;

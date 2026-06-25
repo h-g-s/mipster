@@ -103,6 +103,135 @@ static bool rowNeedsProcessing(
 
 } // namespace
 
+// ── Combined scanner: binary knapsack pre-check + FBBT pass-1 data ───────────
+//
+// Used instead of rowNeedsProcessing when the problem has non-binary variables.
+// Scans all nonzeros without early exit (FBBT needs the complete scan) and
+// simultaneously computes:
+//   - runKnapsack : whether the binary knapsack should process this iteration
+//   - fbbtUseful  : whether FBBT pass 2 might tighten a non-binary bound
+//   - bEff        : effective RHS for FBBT (mult * adjRhs, fixed vars discounted)
+//   - minAct      : finite minimum activity (binary and finite non-binary vars)
+//   - nUnbounded  : number of non-binary vars with infinite bound in constraint dir
+//   - unboundedK  : row position of the single unbounded var (nUnbounded == 1)
+//
+// Binary variables are included in minAct so that FBBT arithmetic is correct
+// (e.g. if a binary was fixed to 1 in this round its contribution is exact),
+// but they are never tightened in the FBBT pass 2 — the knapsack handles them.
+namespace {
+
+struct RowScanInfo {
+  bool runKnapsack;  ///< binary knapsack should run this iteration
+  bool fbbtUseful;   ///< FBBT can potentially tighten non-binary bounds
+  double bEff;       ///< effective rhs for FBBT
+  double minAct;     ///< finite minimum activity
+  int nUnbounded;    ///< unbounded non-binary variable count (0 or 1)
+  int unboundedK;    ///< row position of unbounded non-binary var (nUnbounded==1)
+};
+
+static RowScanInfo scanRow(
+  const int *idx, const double *coef, int nz,
+  double multiplier, double adjustedRhs,
+  const double *colLB, const double *colUB, const char *colType,
+  double primalTol, double infinity)
+{
+  using CT = CoinColumnType;
+
+  RowScanInfo info;
+  info.runKnapsack = false;
+  info.fbbtUseful = true;
+  info.bEff = multiplier * adjustedRhs;
+  info.minAct = 0.0;
+  info.nUnbounded = 0;
+  info.unboundedK = -1;
+
+  // Binary check state — mirrors rowNeedsProcessing but without early exit.
+  double binaryRhs = multiplier * adjustedRhs;
+  double maxCoef = 0.0;
+  bool seenPositiveC = false;
+  bool binaryUnbounded = false; // a free non-binary makes binary fixing impossible
+
+  for (int k = 0; k < nz; ++k) {
+    const int col = idx[k];
+    const double c = coef[k] * multiplier;
+    if (c == 0.0)
+      continue;
+
+    const double lb = colLB[col], ub = colUB[col];
+
+    if (lb == ub) {
+      // Fixed variable: discount from both binary rhs and FBBT bEff.
+      binaryRhs -= c * lb;
+      info.bEff -= c * lb;
+      continue;
+    }
+
+    const char ct = colType[col];
+
+    if (ct == CT::SemiContinuous || ct == CT::SemiInteger) {
+      // Semi-continuous/semi-integer: skip FBBT for this row;
+      // let processRow handle (and abort) the semi variable.
+      info.fbbtUseful = false;
+      info.runKnapsack = true;
+      return info;
+    }
+
+    if (ct == CT::Continuous || ct == CT::GeneralInteger) {
+      // Non-binary: update FBBT min activity and check for unbounded contribution.
+      if (c > 0.0) {
+        if (lb <= -infinity) {
+          binaryUnbounded = true;
+          if (++info.nUnbounded == 1)
+            info.unboundedK = k;
+          else
+            info.fbbtUseful = false; // nUnbounded >= 2 → skip FBBT
+        } else {
+          info.minAct += c * lb;
+          binaryRhs -= c * lb; // discount for binary check
+        }
+      } else { // c < 0
+        if (ub >= infinity) {
+          binaryUnbounded = true;
+          if (++info.nUnbounded == 1)
+            info.unboundedK = k;
+          else
+            info.fbbtUseful = false;
+        } else {
+          info.minAct += c * ub;
+          binaryRhs -= c * ub; // discount for binary check
+        }
+      }
+      continue;
+    }
+
+    // Binary variable: include in FBBT min activity (tightening handled by knapsack).
+    // c > 0: lb = 0 (free binary) → contributes 0; c < 0: ub = 1 → contributes c.
+    if (c > 0.0)
+      info.minAct += c * lb;
+    else
+      info.minAct += c * ub;
+
+    // Binary check (mirrors rowNeedsProcessing without early exit).
+    if (c >= 0.0) {
+      seenPositiveC = true;
+      maxCoef = std::max(maxCoef, c);
+    } else {
+      binaryRhs += (-c); // complementation
+      maxCoef = std::max(maxCoef, -c);
+    }
+  }
+
+  // Binary knapsack should run when: a free non-binary doesn't block fixings AND
+  // either the effective RHS is already negative (infeasibility) or the largest
+  // coefficient exceeds the RHS (some binary can be fixed).
+  if (!binaryUnbounded)
+    info.runKnapsack = (binaryRhs < -primalTol) || (maxCoef > binaryRhs + primalTol);
+
+  return info;
+}
+
+} // namespace
+
 CoinBoundPropagation::CoinBoundPropagation(
   int numCols,
   const char *colType,
@@ -120,6 +249,7 @@ CoinBoundPropagation::CoinBoundPropagation(
   , infeasibleRow_(-1)
   , infeasibleCol_(-1)
   , complete_(true)
+  , nContinuousTightened_(0)
 {
   // Mutable copies of column bounds updated as fixings are propagated.
   std::vector< double > mutableLB(colLB, colLB + numCols);
@@ -143,6 +273,20 @@ CoinBoundPropagation::CoinBoundPropagation(
 
   double multipliers[2];
   double rhsAdjustments[2];
+
+  // Pre-check: if the problem has any non-binary variable, we take the FBBT
+  // path (scanRow instead of rowNeedsProcessing) so that activity arithmetic
+  // can tighten continuous and general-integer bounds in the same loop.
+  bool hasNonBinary = false;
+  for (int j = 0; j < numCols && !hasNonBinary; ++j)
+    if (colType[j] != CoinColumnType::Binary)
+      hasNonBinary = true;
+
+  // Per-column touch flag: set when FBBT tightens a non-binary bound.
+  // Only allocated when needed; avoids overhead for pure-binary problems.
+  std::vector< bool > fbbtTouched;
+  if (hasNonBinary)
+    fbbtTouched.assign(static_cast< size_t >(numCols), false);
 
 #ifdef COIN_BT_STATS
   rowStats_.reserve(nRows);
@@ -177,68 +321,46 @@ CoinBoundPropagation::CoinBoundPropagation(
     bool rowSkipped = (numIter == 0);
 
     for (int it = 0; it < numIter; ++it) {
-      // Mathematical pre-check: skip this iteration if no fixing is possible.
-      // This is always sound — it never suppresses a real fixing or infeasibility.
-      if (!rowNeedsProcessing(rowIdxs, rowCoefs, rowLength,
-                               multipliers[it], rhsAdjustments[it],
-                               mColLB, mColUB, colType,
-                               primalTolerance, infinity)) {
-        rowSkipped = true;
-        continue;
-      }
+      bool doKnapsack;
+      RowScanInfo scan; // only valid when hasNonBinary
 
-      knapsackRow.processRow(
-        rowIdxs, rowCoefs, rowLength, rowSense,
-        multipliers[it], rhsAdjustments[it]);
-
-      // Skip rows that are unbounded or have no binary variables.
-      if (knapsackRow.isUnbounded()) {
-        rowSkipped = true;
-        continue;
-      }
-
-      rowSkipped = false;
-
-      const double rhs = knapsackRow.rhs();
-
-      // Direct row infeasibility: effective RHS is finite but strictly negative.
-      if (std::isfinite(rhs) && rhs < -primalTolerance) {
-#ifdef COIN_BT_STATS
-        {
-          const auto statsT1 = std::chrono::high_resolution_clock::now();
-          rowStats_.push_back({idxRow,
-            std::chrono::duration< double >(statsT1 - statsT0).count(),
-            newBounds_.size() - fixingsBefore, false});
+      if (hasNonBinary) {
+        scan = scanRow(rowIdxs, rowCoefs, static_cast< int >(rowLength),
+          multipliers[it], rhsAdjustments[it],
+          mColLB, mColUB, colType, primalTolerance, infinity);
+        doKnapsack = scan.runKnapsack;
+        if (!doKnapsack && !scan.fbbtUseful) {
+          rowSkipped = true;
+          continue;
         }
-#endif
-        infeasibleRow_ = static_cast< int >(idxRow);
-        infeasible_ = true;
-        return;
+      } else {
+        // Fast path: binary-only problem — keep original early-exit pre-check.
+        doKnapsack = rowNeedsProcessing(rowIdxs, rowCoefs, rowLength,
+          multipliers[it], rhsAdjustments[it],
+          mColLB, mColUB, colType, primalTolerance, infinity);
+        if (!doKnapsack) {
+          rowSkipped = true;
+          continue;
+        }
       }
 
-      const size_t nFixed = knapsackRow.nFixedVariables();
-      if (nFixed == 0)
-        continue;
+      if (doKnapsack) {
+        knapsackRow.processRow(
+          rowIdxs, rowCoefs, rowLength, rowSense,
+          multipliers[it], rhsAdjustments[it]);
 
-      const int *fixedVars = knapsackRow.fixedVariables();
-      for (size_t fi = 0; fi < nFixed; ++fi) {
-        const int rawIdx = fixedVars[fi];
-        // rawIdx < numCols  → original variable must be 0
-        // rawIdx >= numCols → complemented, so original must be 1
-        const int origCol = (rawIdx < numCols) ? rawIdx : rawIdx - numCols;
-        const int newVal = (rawIdx < numCols) ? 0 : 1;
+        // Skip rows that are unbounded or have no binary variables.
+        if (knapsackRow.isUnbounded()) {
+          rowSkipped = true;
+          continue;
+        }
 
-        if (fixedTo[origCol] == -1) {
-          // First time this variable is fixed.
-          fixedTo[origCol] = newVal;
-          const double lb = static_cast< double >(newVal);
-          const double ub = static_cast< double >(newVal);
-          newBounds_.push_back(
-            std::make_pair(static_cast< size_t >(origCol),
-              std::make_pair(lb, ub)));
-          mColLB[origCol] = lb;
-          mColUB[origCol] = ub;
-        } else if (fixedTo[origCol] != newVal) {
+        rowSkipped = false;
+
+        const double rhs = knapsackRow.rhs();
+
+        // Direct row infeasibility: effective RHS is finite but strictly negative.
+        if (std::isfinite(rhs) && rhs < -primalTolerance) {
 #ifdef COIN_BT_STATS
           {
             const auto statsT1 = std::chrono::high_resolution_clock::now();
@@ -247,14 +369,159 @@ CoinBoundPropagation::CoinBoundPropagation(
               newBounds_.size() - fixingsBefore, false});
           }
 #endif
-          // Contradictory fixing: same variable implied to be both 0 and 1.
-          infeasibleCol_ = origCol;
-          infeasibleRow_ = static_cast< int >(idxRow); // row that found the conflict
+          infeasibleRow_ = static_cast< int >(idxRow);
           infeasible_ = true;
           return;
         }
-        // If fixedTo[origCol] == newVal the fixing is a duplicate; skip.
-      }
+
+        const size_t nFixed = knapsackRow.nFixedVariables();
+        if (nFixed > 0) {
+          const int *fixedVars = knapsackRow.fixedVariables();
+          for (size_t fi = 0; fi < nFixed; ++fi) {
+            const int rawIdx = fixedVars[fi];
+            // rawIdx < numCols  → original variable must be 0
+            // rawIdx >= numCols → complemented, so original must be 1
+            const int origCol = (rawIdx < numCols) ? rawIdx : rawIdx - numCols;
+            const int newVal = (rawIdx < numCols) ? 0 : 1;
+
+            if (fixedTo[origCol] == -1) {
+              // First time this variable is fixed.
+              fixedTo[origCol] = newVal;
+              const double lb = static_cast< double >(newVal);
+              const double ub = static_cast< double >(newVal);
+              newBounds_.push_back(
+                std::make_pair(static_cast< size_t >(origCol),
+                  std::make_pair(lb, ub)));
+              mColLB[origCol] = lb;
+              mColUB[origCol] = ub;
+            } else if (fixedTo[origCol] != newVal) {
+#ifdef COIN_BT_STATS
+              {
+                const auto statsT1 = std::chrono::high_resolution_clock::now();
+                rowStats_.push_back({idxRow,
+                  std::chrono::duration< double >(statsT1 - statsT0).count(),
+                  newBounds_.size() - fixingsBefore, false});
+              }
+#endif
+              // Contradictory fixing: same variable implied to be both 0 and 1.
+              infeasibleCol_ = origCol;
+              infeasibleRow_ = static_cast< int >(idxRow);
+              infeasible_ = true;
+              return;
+            }
+            // If fixedTo[origCol] == newVal the fixing is a duplicate; skip.
+          }
+        }
+      } // doKnapsack
+
+      // ── FBBT pass 2: tighten non-binary bounds using activity arithmetic ──
+      // Runs only when the combined scan found at least one non-binary variable
+      // that FBBT might tighten.  Binary variables are intentionally skipped
+      // here — they are handled (more powerfully) by the knapsack above.
+      if (hasNonBinary && scan.fbbtUseful) {
+        using CT = CoinColumnType;
+        const double slack = scan.bEff - scan.minAct;
+        rowSkipped = false;
+
+        if (scan.nUnbounded == 0) {
+          // Infeasibility: finite min activity exceeds effective RHS.
+          if (slack < -primalTolerance) {
+#ifdef COIN_BT_STATS
+            {
+              const auto statsT1 = std::chrono::high_resolution_clock::now();
+              rowStats_.push_back({idxRow,
+                std::chrono::duration< double >(statsT1 - statsT0).count(),
+                newBounds_.size() - fixingsBefore, false});
+            }
+#endif
+            infeasibleRow_ = static_cast< int >(idxRow);
+            infeasible_ = true;
+            return;
+          }
+
+          // Standard case: tighten every non-fixed, non-binary variable.
+          for (int k = 0; k < static_cast< int >(rowLength); ++k) {
+            const int col = rowIdxs[k];
+            const double c = rowCoefs[k] * multipliers[it];
+            if (c == 0.0)
+              continue;
+            const char ct = colType[col];
+            // Knapsack handles binary; FBBT skips binary and semi.
+            if (ct == CT::Binary || ct == CT::SemiContinuous || ct == CT::SemiInteger)
+              continue;
+            if (mColLB[col] == mColUB[col])
+              continue; // fixed
+            const bool isInt = (ct == CT::GeneralInteger);
+            if (c > 0.0) {
+              double newUB = mColLB[col] + slack / c;
+              if (isInt)
+                newUB = std::floor(newUB + primalTolerance);
+              if (newUB < mColUB[col] - primalTolerance) {
+                if (newUB < mColLB[col] - primalTolerance) {
+                  // New UB below current LB: infeasible.
+                  infeasibleRow_ = static_cast< int >(idxRow);
+                  infeasible_ = true;
+                  return;
+                }
+                mColUB[col] = newUB;
+                fbbtTouched[static_cast< size_t >(col)] = true;
+              }
+            } else { // c < 0
+              double newLB = mColUB[col] + slack / c;
+              if (isInt)
+                newLB = std::ceil(newLB - primalTolerance);
+              if (newLB > mColLB[col] + primalTolerance) {
+                if (newLB > mColUB[col] + primalTolerance) {
+                  // New LB above current UB: infeasible.
+                  infeasibleRow_ = static_cast< int >(idxRow);
+                  infeasible_ = true;
+                  return;
+                }
+                mColLB[col] = newLB;
+                fbbtTouched[static_cast< size_t >(col)] = true;
+              }
+            }
+          }
+        } else {
+          // nUnbounded == 1: tighten only the one unbounded non-binary variable.
+          const int col = rowIdxs[scan.unboundedK];
+          const double c = rowCoefs[scan.unboundedK] * multipliers[it];
+          const char ct = colType[col];
+          if (ct != CT::Binary && ct != CT::SemiContinuous && ct != CT::SemiInteger
+              && mColLB[col] != mColUB[col]) {
+            const bool isInt = (ct == CT::GeneralInteger);
+            if (c > 0.0) {
+              // lb = -inf; derive new UB: x ≤ slack / c
+              double newUB = slack / c;
+              if (isInt)
+                newUB = std::floor(newUB + primalTolerance);
+              if (newUB < mColUB[col] - primalTolerance) {
+                if (newUB < mColLB[col] - primalTolerance) {
+                  infeasibleRow_ = static_cast< int >(idxRow);
+                  infeasible_ = true;
+                  return;
+                }
+                mColUB[col] = newUB;
+                fbbtTouched[static_cast< size_t >(col)] = true;
+              }
+            } else { // c < 0, ub = +inf
+              // derive new LB: x ≥ slack / c (flipped: c < 0)
+              double newLB = slack / c;
+              if (isInt)
+                newLB = std::ceil(newLB - primalTolerance);
+              if (newLB > mColLB[col] + primalTolerance) {
+                if (newLB > mColUB[col] + primalTolerance) {
+                  infeasibleRow_ = static_cast< int >(idxRow);
+                  infeasible_ = true;
+                  return;
+                }
+                mColLB[col] = newLB;
+                fbbtTouched[static_cast< size_t >(col)] = true;
+              }
+            }
+          }
+        }
+      } // FBBT pass 2
     } // row iterations
 
 #ifdef COIN_BT_STATS
@@ -267,4 +534,16 @@ CoinBoundPropagation::CoinBoundPropagation(
     }
 #endif
   } // all rows
+
+  // Collect non-binary FBBT tightenings into newBounds_.
+  // These are appended after all binary fixings so nFixings() (which subtracts
+  // nContinuousTightened_) remains correct.
+  if (hasNonBinary) {
+    for (int j = 0; j < numCols; ++j) {
+      if (fbbtTouched[static_cast< size_t >(j)]) {
+        newBounds_.push_back({ static_cast< size_t >(j), { mColLB[j], mColUB[j] } });
+        ++nContinuousTightened_;
+      }
+    }
+  }
 }

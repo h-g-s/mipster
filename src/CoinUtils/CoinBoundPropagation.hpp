@@ -137,8 +137,20 @@ public:
     return newBounds_;
   }
 
-  /** @brief Number of variable fixings discovered. */
-  size_t nFixings() const { return newBounds_.size(); }
+  /** @brief Number of variable fixings discovered (binary variables only). */
+  size_t nFixings() const
+  {
+    return newBounds_.size() - static_cast< size_t >(nContinuousTightened_);
+  }
+
+  /**
+   * @brief Number of non-binary variable bounds tightened by FBBT.
+   *
+   * Counts continuous and general-integer bounds tightened during
+   * the activity-based FBBT pass integrated into this class.
+   * Always zero when the problem has no non-binary variables.
+   */
+  int nContinuousTightened() const { return nContinuousTightened_; }
 
   /**
    * @brief True if the bound-tightening pass detected infeasibility.
@@ -199,6 +211,7 @@ private:
   int infeasibleRow_; ///< row that triggered infeasibility (-1 if none / unknown)
   int infeasibleCol_; ///< column in contradictory fixing (-1 if none / unknown)
   bool complete_;     ///< false if any row was hard-skipped via maxRowNz
+  int nContinuousTightened_; ///< non-binary bounds tightened by FBBT (0 when !hasNonBinary)
 #ifdef COIN_BT_STATS
   std::vector< CoinBTRowStats > rowStats_;
 #endif
