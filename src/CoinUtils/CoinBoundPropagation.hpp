@@ -153,7 +153,8 @@ public:
     double infinity = 1e50,
     int maxRowNz = -1,
     bool collectCases = false,
-    bool nonBinaryFBBT = true);
+    bool nonBinaryFBBT = true,
+    const std::vector< bool > *dirtyRowsFBBT = nullptr);
 
   ~CoinBoundPropagation() = default;
 

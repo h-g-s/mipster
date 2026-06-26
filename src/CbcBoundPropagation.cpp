@@ -206,6 +206,75 @@ bool CbcBoundPropagation::run(OsiSolverInterface *solver,
     }
   };
 
+  // ── Dirty-row tracking for FBBT ───────────────────────────────────────────
+  // On the first round every row containing a non-binary variable is eligible
+  // for FBBT.  On subsequent rounds only rows whose activity could have changed
+  // (because a variable's bound was updated in the previous round) are dirty.
+  //
+  // colToRows[colRowStart[j] .. colRowStart[j+1])  lists the rows containing
+  // column j.  Built once in O(nnz); reused across all rounds.
+  const int nRows = matByRow->getNumRows();
+  const int *matIdxs = matByRow->getIndices();
+  const CoinBigIndex *matStart = matByRow->getVectorStarts();
+  const int *matLen = matByRow->getVectorLengths();
+
+  bool hasNonBinaryVars = false;
+  if (nonBinaryFBBT_) {
+    for (int j = 0; j < nCols && !hasNonBinaryVars; ++j)
+      if (colTypeBuf[j] != 1) // 1 = Binary
+        hasNonBinaryVars = true;
+  }
+
+  std::vector< CoinBigIndex > colRowStart;
+  std::vector< int > colRowList;
+  std::vector< bool > rowHasNonBinaryBP;
+  std::vector< bool > dirtyRowsFBBT;
+
+  if (hasNonBinaryVars) {
+    // Build rowHasNonBinaryBP[r]: does row r contain any non-binary variable?
+    // (Using the initial colType before any reclassification — conservative.)
+    rowHasNonBinaryBP.assign(static_cast< size_t >(nRows), false);
+    for (int r = 0; r < nRows; ++r) {
+      const CoinBigIndex rs = matStart[r];
+      const int len = matLen[r];
+      for (int k = 0; k < len; ++k) {
+        if (colTypeBuf[matIdxs[rs + k]] != 1) {
+          rowHasNonBinaryBP[r] = true;
+          break;
+        }
+      }
+    }
+
+    // Build colToRows: for each column j, the list of rows that contain j.
+    colRowStart.assign(static_cast< size_t >(nCols + 1), CoinBigIndex(0));
+    for (int r = 0; r < nRows; ++r) {
+      const CoinBigIndex rs = matStart[r];
+      const int len = matLen[r];
+      for (int k = 0; k < len; ++k)
+        ++colRowStart[matIdxs[rs + k] + 1];
+    }
+    for (int j = 0; j < nCols; ++j)
+      colRowStart[j + 1] += colRowStart[j];
+    colRowList.resize(static_cast< size_t >(colRowStart[nCols]));
+    {
+      std::vector< CoinBigIndex > pos(colRowStart.begin(),
+        colRowStart.begin() + nCols);
+      for (int r = 0; r < nRows; ++r) {
+        const CoinBigIndex rs = matStart[r];
+        const int len = matLen[r];
+        for (int k = 0; k < len; ++k) {
+          const int j = matIdxs[rs + k];
+          colRowList[pos[j]++] = r;
+        }
+      }
+    }
+
+    // Round 1: all rows with non-binary variables are dirty.
+    dirtyRowsFBBT.assign(static_cast< size_t >(nRows), false);
+    for (int r = 0; r < nRows; ++r)
+      if (rowHasNonBinaryBP[r]) dirtyRowsFBBT[r] = true;
+  }
+
   for (int round = 0; round < roundLimit; ++round) {
     diagRound = round;
     refreshColType(); // update binary/general-integer from current curLB/curUB
@@ -225,12 +294,14 @@ bool CbcBoundPropagation::run(OsiSolverInterface *solver,
     }
 
     // Construction runs the algorithm; results are immediately available.
+    const std::vector< bool > *dirtyHint =
+      hasNonBinaryVars ? &dirtyRowsFBBT : nullptr;
     CoinBoundPropagation bt(nCols, colType,
       curLB.data(), curUB.data(),
       matByRow, rowSense, rhs, range,
       primalTol, infinity,
       /*maxRowNz=*/-1, /*collectCases=*/false,
-      nonBinaryFBBT_);
+      nonBinaryFBBT_, dirtyHint);
 
     ++nRoundsRun_;
 
@@ -300,6 +371,22 @@ bool CbcBoundPropagation::run(OsiSolverInterface *solver,
 
     nBoundPropFixed_ += nFixed;
     nFBBTTightened_ += nFBBT;
+
+    // Update dirty-row set for the next round: mark rows adjacent to any
+    // column whose bounds changed (both binary fixings and FBBT tightenings
+    // change activity of their rows).
+    if (hasNonBinaryVars) {
+      std::fill(dirtyRowsFBBT.begin(), dirtyRowsFBBT.end(), false);
+      for (const auto &p : bounds) {
+        const int col = static_cast< int >(p.first);
+        for (CoinBigIndex ri = colRowStart[col]; ri < colRowStart[col + 1];
+             ++ri) {
+          const int r = colRowList[ri];
+          if (rowHasNonBinaryBP[r])
+            dirtyRowsFBBT[r] = true;
+        }
+      }
+    }
 
     if (logLevel >= 2)
       printf("  Bound propagation: round %d fixed %d vars, FBBT tightened %d"

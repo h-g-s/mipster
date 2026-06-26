@@ -245,7 +245,8 @@ CoinBoundPropagation::CoinBoundPropagation(
   double infinity,
   int maxRowNz,
   bool collectCases,
-  bool nonBinaryFBBT)
+  bool nonBinaryFBBT,
+  const std::vector< bool > *dirtyRowsFBBT)
   : newBounds_()
   , infeasible_(false)
   , infeasibleRow_(-1)
@@ -281,9 +282,15 @@ CoinBoundPropagation::CoinBoundPropagation(
   // so that activity arithmetic can tighten continuous/general-integer bounds.
   bool hasNonBinary = false;
   if (nonBinaryFBBT) {
-    for (int j = 0; j < numCols && !hasNonBinary; ++j)
-      if (colType[j] != CoinColumnType::Binary)
-        hasNonBinary = true;
+    // If the caller supplies a dirty-rows hint, it was built from a non-binary
+    // check on the problem — non-binary vars exist iff the dirty array is non-null.
+    if (dirtyRowsFBBT != nullptr) {
+      hasNonBinary = true; // caller wouldn't pass a dirty hint for pure-binary problems
+    } else {
+      for (int j = 0; j < numCols && !hasNonBinary; ++j)
+        if (colType[j] != CoinColumnType::Binary)
+          hasNonBinary = true;
+    }
   }
 
   // Per-column touch flag: set when FBBT tightens a non-binary bound.
@@ -293,10 +300,12 @@ CoinBoundPropagation::CoinBoundPropagation(
     fbbtTouched.assign(static_cast< size_t >(numCols), false);
 
   // Per-row flag: does this row contain at least one non-binary variable?
-  // Computed once; lets binary-only rows keep the cheap rowNeedsProcessing()
-  // path even in mixed-variable problems (avoids scanRow() overhead on them).
+  // When the caller supplies dirtyRowsFBBT, it already encodes "is non-binary
+  // AND was touched last round", so we skip the O(nnz) scan and use the hint
+  // directly.  When no hint is given (first round / binary-only fallback), we
+  // compute it ourselves.
   std::vector< bool > rowHasNonBinary;
-  if (hasNonBinary) {
+  if (hasNonBinary && dirtyRowsFBBT == nullptr) {
     rowHasNonBinary.assign(nRows, false);
     for (size_t r = 0; r < nRows; ++r) {
       const CoinBigIndex rs = start[r];
@@ -309,6 +318,17 @@ CoinBoundPropagation::CoinBoundPropagation(
       }
     }
   }
+
+  // Helper: should row r use the full scanRow() + FBBT path?
+  // true  → scan row for FBBT activity arithmetic
+  // false → use cheap rowNeedsProcessing() for knapsack only
+  auto rowNeedsFBBT = [&](size_t r) -> bool {
+    if (!hasNonBinary)
+      return false;
+    if (dirtyRowsFBBT != nullptr)
+      return (*dirtyRowsFBBT)[r];
+    return rowHasNonBinary[r];
+  };
 
 #ifdef COIN_BT_STATS
   rowStats_.reserve(nRows);
@@ -346,7 +366,7 @@ CoinBoundPropagation::CoinBoundPropagation(
       bool doKnapsack;
       RowScanInfo scan; // only valid when row has non-binary vars
 
-      if (hasNonBinary && rowHasNonBinary[idxRow]) {
+      if (rowNeedsFBBT(idxRow)) {
         scan = scanRow(rowIdxs, rowCoefs, static_cast< int >(rowLength),
           multipliers[it], rhsAdjustments[it],
           mColLB, mColUB, colType, primalTolerance, infinity);
@@ -356,7 +376,7 @@ CoinBoundPropagation::CoinBoundPropagation(
           continue;
         }
       } else {
-        // Fast path: row has only binary vars — use cheap early-exit pre-check.
+        // Fast path: row has only binary vars, or is clean this round.
         doKnapsack = rowNeedsProcessing(rowIdxs, rowCoefs, rowLength,
           multipliers[it], rhsAdjustments[it],
           mColLB, mColUB, colType, primalTolerance, infinity);
@@ -379,7 +399,7 @@ CoinBoundPropagation::CoinBoundPropagation(
           snapLB[k] = mColLB[rowIdxs[k]];
           snapUB[k] = mColUB[rowIdxs[k]];
         }
-        if (hasNonBinary && rowHasNonBinary[idxRow]) {
+        if (rowNeedsFBBT(idxRow)) {
           caseBEff = scan.bEff;
         } else {
           // Binary-only path: compute bEff by discounting fixed vars.
@@ -506,7 +526,7 @@ CoinBoundPropagation::CoinBoundPropagation(
       // Runs only when the combined scan found at least one non-binary variable
       // that FBBT might tighten.  Binary variables are intentionally skipped
       // here — they are handled (more powerfully) by the knapsack above.
-      if (hasNonBinary && rowHasNonBinary[idxRow] && scan.fbbtUseful) {
+      if (hasNonBinary && rowNeedsFBBT(idxRow) && scan.fbbtUseful) {
         using CT = CoinColumnType;
         const double slack = scan.bEff - scan.minAct;
         rowSkipped = false;
