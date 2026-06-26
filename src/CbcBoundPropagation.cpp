@@ -486,7 +486,7 @@ bool CbcBoundPropagation::run(OsiSolverInterface *solver,
             dirtyRowsFBBT[r] = true;
         }
       }
-    }
+    } // if (hasNonBinaryVars && round >= 1)
 
     if (logLevel >= 2)
       printf("  Bound propagation: round %d fixed %d vars, FBBT tightened %d"

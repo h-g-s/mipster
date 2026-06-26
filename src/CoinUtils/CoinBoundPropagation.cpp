@@ -370,12 +370,12 @@ CoinBoundPropagation::CoinBoundPropagation(
     for (int it = 0; it < numIter; ++it) {
       bool doKnapsack;
       RowScanInfo scan; // only valid when row has non-binary vars
+      bool usedCachedScan = false;
 
       if (rowNeedsFBBT(idxRow)) {
         // Cached fast path: when the caller provides per-row activity caches
         // and this row has no binary variables, skip the O(L) scanRow() and
         // compute the slack in O(1) from the pre-computed cached values.
-        bool usedCachedScan = false;
         if (cachedRowMinAct != nullptr && rowHasBinary != nullptr
             && !rowHasBinary[idxRow]
             && multipliers[it] > 0) {
@@ -557,11 +557,20 @@ CoinBoundPropagation::CoinBoundPropagation(
       // here — they are handled (more powerfully) by the knapsack above.
       if (hasNonBinary && rowNeedsFBBT(idxRow) && scan.fbbtUseful) {
         using CT = CoinColumnType;
-        const double slack = scan.bEff - scan.minAct;
+        double slack = scan.bEff - scan.minAct;
         rowSkipped = false;
 
         if (scan.nUnbounded == 0) {
           // Infeasibility: finite min activity exceeds effective RHS.
+          // If we used the cached (Jacobi) minAct and it looks infeasible,
+          // re-verify with a fresh scanRow before declaring infeasibility —
+          // the cache can drift from the true sum over many incremental rounds.
+          if (slack < -primalTolerance && usedCachedScan) {
+            scan = scanRow(rowIdxs, rowCoefs, static_cast< int >(rowLength),
+              multipliers[it], rhsAdjustments[it],
+              mColLB, mColUB, colType, primalTolerance, infinity);
+            slack = scan.bEff - scan.minAct;
+          }
           if (slack < -primalTolerance) {
 #ifdef COIN_BT_STATS
             {
@@ -577,6 +586,13 @@ CoinBoundPropagation::CoinBoundPropagation(
           }
 
           // Standard case: tighten every non-fixed, non-binary variable.
+          // Guard: only tighten when slack is strictly positive.  When slack ≤ 0
+          // (borderline infeasible within tolerance), newUB = lb + slack/c ≤ lb
+          // which would produce UB < LB — numerically invalid.  The infeasibility
+          // check above already handles slack < -primalTolerance; here we skip the
+          // tightening loop for the [−primalTolerance, 0] band.
+          if (slack <= 0.0)
+            goto skip_tightening_nUnb0;
           for (int k = 0; k < static_cast< int >(rowLength); ++k) {
             const int col = rowIdxs[k];
             const double c = rowCoefs[k] * multipliers[it];
@@ -623,6 +639,7 @@ CoinBoundPropagation::CoinBoundPropagation(
               }
             }
           }
+          skip_tightening_nUnb0:;
         } else {
           // nUnbounded == 1: tighten only the one unbounded non-binary variable.
           const int k1 = scan.unboundedK;
