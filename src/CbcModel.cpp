@@ -7943,10 +7943,22 @@ int CbcModel::runHeuristic(CbcHeuristic *heuristic, double &heuristicValue, doub
   double startTime = getCurrentSeconds();
   int numInfeasBefore = heuristic->numInfeasible();
   int numIterBefore = heuristic->numIterationLimit();
-  
+
+  if (handler_->logLevel() > 1) {
+    fprintf(stdout, "  [heur] %-30s starting  node=%-6d  t=%.1fs\n",
+      heuristic->heuristicName(), numberNodes_, startTime);
+    fflush(stdout);
+  }
+
   int result = heuristic->solution(heuristicValue, newSolution);
 
   double duration = getCurrentSeconds() - startTime;
+
+  if (handler_->logLevel() > 1) {
+    fprintf(stdout, "  [heur] %-30s done      result=%-2d  dt=%.1fs\n",
+      heuristic->heuristicName(), result, duration);
+    fflush(stdout);
+  }
   heuristic->recordExecution(duration);
   heuristic->recordDepth(currentDepth_);
 
@@ -11305,9 +11317,11 @@ int CbcModel::serialCuts(OsiCuts &theseCuts, CbcNode *node, OsiCuts &slackCuts,
     int numberColumnCutsBefore = theseCuts.sizeColCuts();
     int numberRowCutsAfter = numberRowCutsBefore;
     int numberColumnCutsAfter = numberColumnCutsBefore;
-    /*printf("GEN %d %s switches %d\n",
-               i,generator_[i]->cutGeneratorName(),
-               generator_[i]->switches());*/
+    if (handler_->logLevel() > 1) {
+      fprintf(stdout, "  [cuts] %-30s node=%-6d  t=%.1fs\n",
+        generator_[i]->cutGeneratorName(), numberNodes_, getCurrentSeconds());
+      fflush(stdout);
+    }
     bool generate = generator_[i]->normal();
     // skip if not optimal and should be (maybe a cut generator has fixed
     // variables)

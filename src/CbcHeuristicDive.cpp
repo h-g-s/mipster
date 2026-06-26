@@ -330,6 +330,23 @@ int CbcHeuristicDive::solution(double &solutionValue, int &numberNodes,
   double effectiveMaxTime = (cbcRemaining < maxTime_) ? cbcRemaining : maxTime_;
   if (effectiveMaxTime <= 0.0)
     return 0; // CBC time already exhausted — skip the dive entirely
+  // When a feasible solution already exists, the dive is purely improving —
+  // apply a tighter budget so it doesn't monopolise B&B time. Cap to 10% of
+  // the nominal maxTime_ (floor: 10s; no cap in aggressive mode where finding
+  // the first solution is the priority).
+  bool hasSolution = (model_->bestSolution() != nullptr);
+  bool useAggressiveMode = aggressiveMode_ || ((when_ % 100) == 8);
+  if (hasSolution && !useAggressiveMode) {
+    double tightCap = std::max(maxTime_ * 0.1, 10.0);
+    effectiveMaxTime = std::min(effectiveMaxTime, tightCap);
+  }
+  if (model_->messageHandler()->logLevel() > 1) {
+    printf("  [dive] %-30s starting  node=%-6d  budget=%.1fs  t=%.1fs%s\n",
+      heuristicName_.c_str(), model_->getNodeCount(),
+      effectiveMaxTime, model_->getCurrentSeconds(),
+      hasSolution ? "  (sol exists→tight budget)" : "");
+    fflush(stdout);
+  }
   int numberSimplexIterations = 0;
   int maxSimplexIterations = (model_->getNodeCount()) ? maxSimplexIterations_
                                                       : maxSimplexIterationsAtRoot_;
@@ -341,8 +358,7 @@ int CbcHeuristicDive::solution(double &solutionValue, int &numberNodes,
   // limits to match root-node quality so the dive gets every chance to find
   // the first feasible solution.
   int savedMaxIterations = maxIterations_;
-  bool useAggressiveMode = aggressiveMode_ || ((when_ % 100) == 8);
-  if (useAggressiveMode && !model_->bestSolution()) {
+  if (useAggressiveMode && !hasSolution) {
     maxSimplexIterations = std::min(maxSimplexIterationsAtRoot_, COIN_INT_MAX >> 3);
     maxIterationsInOneSolve = 10000;
     maxIterations_ = std::max(maxIterations_, 1000);
@@ -380,12 +396,11 @@ int CbcHeuristicDive::solution(double &solutionValue, int &numberNodes,
       oneSolveIts = std::min(oneSolveIts, maxSimplexIterations);
     }
     clpSimplex->setMaximumIterations(oneSolveIts);
-    // Pass the remaining CBC time to the LP solver so that a single LP
-    // re-solve cannot run past the global deadline.
-    if (model_->getMaximumSeconds() < 1.0e10) {
-      double remaining = std::max(model_->getMaximumSeconds() - model_->getCurrentSeconds(), 0.0);
-      clpSimplex->setMaximumWallSeconds(remaining);
-    }
+    // Cap each LP re-solve to the dive's own time budget (not the full CBC
+    // remaining time) so a single expensive LP cannot exhaust the dive budget.
+    // Updated before every resolve() call below; restored to unlimited on exit.
+    if (effectiveMaxTime < 1.0e10)
+      clpSimplex->setMaximumWallSeconds(effectiveMaxTime);
     if (!nodes) {
       // say give up easily
       clpSimplex->setMoreSpecialOptions(clpSimplex->moreSpecialOptions() | 64);
@@ -534,6 +549,9 @@ int CbcHeuristicDive::solution(double &solutionValue, int &numberNodes,
         int remaining = maxSimplexIterations - numberSimplexIterations;
         clpSolver->getModelPtr()->setMaximumIterations(std::max(remaining, 100));
       }
+      if (effectiveMaxTime < 1.0e10)
+        clpSolver->getModelPtr()->setMaximumWallSeconds(
+          std::max(effectiveMaxTime - (CoinGetTimeOfDay() - time1), 0.0));
       solver->resolve();
       numberSimplexIterations += solver->getIterationCount();
       if (!solver->isProvenOptimal())
@@ -1024,6 +1042,9 @@ int CbcHeuristicDive::solution(double &solutionValue, int &numberNodes,
         int remaining = maxSimplexIterations - numberSimplexIterations;
         clpSolver->getModelPtr()->setMaximumIterations(std::max(remaining, 100));
       }
+      if (effectiveMaxTime < 1.0e10)
+        clpSolver->getModelPtr()->setMaximumWallSeconds(
+          std::max(effectiveMaxTime - (CoinGetTimeOfDay() - time1), 0.0));
       solver->resolve();
       numberSimplexIterations += solver->getIterationCount();
 #if DIVE_PRINT > 1
@@ -1237,6 +1258,9 @@ int CbcHeuristicDive::solution(double &solutionValue, int &numberNodes,
     }
     if (!numberNodes) {
       // was good at start! - create fake
+      if (effectiveMaxTime < 1.0e10)
+        clpSolver->getModelPtr()->setMaximumWallSeconds(
+          std::max(effectiveMaxTime - (CoinGetTimeOfDay() - time1), 0.0));
       clpSolver->resolve();
       numberSimplexIterations += clpSolver->getIterationCount();
       ClpSimplex *simplex = clpSolver->getModelPtr();
@@ -1410,6 +1434,10 @@ int CbcHeuristicDive::solution(double &solutionValue, int &numberNodes,
   downArray_ = NULL;
   delete[] upArray_;
   upArray_ = NULL;
+  // Restore LP wall-seconds limit to unlimited before releasing the clone —
+  // defensive cleanup in case the solver object is somehow reused.
+  if (clpSolver && effectiveMaxTime < 1.0e10)
+    clpSolver->getModelPtr()->setMaximumWallSeconds(-1.0);
   delete solver;
   switches_ = saveSwitches;
   maxIterations_ = savedMaxIterations; // restore in case diveopt 8 boosted it
