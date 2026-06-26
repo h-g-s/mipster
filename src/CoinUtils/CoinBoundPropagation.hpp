@@ -154,7 +154,12 @@ public:
     int maxRowNz = -1,
     bool collectCases = false,
     bool nonBinaryFBBT = true,
-    const std::vector< bool > *dirtyRowsFBBT = nullptr);
+    const std::vector< bool > *dirtyRowsFBBT = nullptr,
+    const double *cachedRowMinAct = nullptr,
+    const double *cachedRowMaxAct = nullptr,
+    const int *cachedRowNUnbLB = nullptr,
+    const int *cachedRowNUnbUB = nullptr,
+    const bool *rowHasBinary = nullptr);
 
   ~CoinBoundPropagation() = default;
 

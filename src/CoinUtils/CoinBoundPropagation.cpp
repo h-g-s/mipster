@@ -246,7 +246,12 @@ CoinBoundPropagation::CoinBoundPropagation(
   int maxRowNz,
   bool collectCases,
   bool nonBinaryFBBT,
-  const std::vector< bool > *dirtyRowsFBBT)
+  const std::vector< bool > *dirtyRowsFBBT,
+  const double *cachedRowMinAct,
+  const double *cachedRowMaxAct,
+  const int *cachedRowNUnbLB,
+  const int *cachedRowNUnbUB,
+  const bool *rowHasBinary)
   : newBounds_()
   , infeasible_(false)
   , infeasibleRow_(-1)
@@ -367,9 +372,33 @@ CoinBoundPropagation::CoinBoundPropagation(
       RowScanInfo scan; // only valid when row has non-binary vars
 
       if (rowNeedsFBBT(idxRow)) {
-        scan = scanRow(rowIdxs, rowCoefs, static_cast< int >(rowLength),
-          multipliers[it], rhsAdjustments[it],
-          mColLB, mColUB, colType, primalTolerance, infinity);
+        // Cached fast path: when the caller provides per-row activity caches
+        // and this row has no binary variables, skip the O(L) scanRow() and
+        // compute the slack in O(1) from the pre-computed cached values.
+        bool usedCachedScan = false;
+        if (cachedRowMinAct != nullptr && rowHasBinary != nullptr
+            && !rowHasBinary[idxRow]
+            && multipliers[it] > 0) {
+          // Cached fast path for pure non-binary ≤ constraints only.
+          // For ≥ constraints (mult < 0) we fall through to scanRow so that
+          // in-round Gauss-Seidel updates are included — the Jacobi cached
+          // maxAct is often stale for the ≥ direction, giving very weak bounds.
+          const int nUnb = cachedRowNUnbLB[idxRow];
+          if (nUnb == 0) {
+            // All variable lower bounds finite: O(1) slack for ≤ direction.
+            scan.bEff = rhsAdjustments[it]; // mult == 1, so mult*adj == adj
+            scan.minAct = cachedRowMinAct[idxRow];
+            scan.nUnbounded = 0;
+            scan.fbbtUseful = true;
+            scan.runKnapsack = false;
+            usedCachedScan = true;
+          }
+        }
+        if (!usedCachedScan) {
+          scan = scanRow(rowIdxs, rowCoefs, static_cast< int >(rowLength),
+            multipliers[it], rhsAdjustments[it],
+            mColLB, mColUB, colType, primalTolerance, infinity);
+        }
         doKnapsack = scan.runKnapsack;
         if (!doKnapsack && !scan.fbbtUseful) {
           rowSkipped = true;
