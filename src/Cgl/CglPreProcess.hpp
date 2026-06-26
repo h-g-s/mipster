@@ -488,6 +488,10 @@ private:
   /// Absolute wallclock deadline for postProcess() LP solves (-1.0 = unlimited)
   double postProcDeadline_;
 
+  /// Absolute wallclock deadline for preprocessing LP solves (1e100 = unlimited).
+  /// Set automatically by setTimeLimit(); used in modified() to time-limit per-pass LP re-solves.
+  double preDeadline_;
+
   /// keep column names
   bool keepColumnNames_;
 

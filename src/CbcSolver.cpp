@@ -1132,7 +1132,7 @@ void CbcSolver::applyLpColdStart(ClpSimplex *clp, OsiSolverInterface *osi)
 
   // Compute LP settings: ML recommendation (LPAuto) or current parameter values.
   LpAutoSettings autoS;
-  if (autoLpMode && osi) {
+  if (autoLpMode && osi && osi->isProvenOptimal()) {
     double feats[OFCount];
     OsiFeatures::compute(feats, osi);
     const char *tag = cbcRecommendLpParam(feats);
@@ -1315,7 +1315,7 @@ int CbcSolver::applyLpMethod(bool applyPreprocessing)
   const bool autoLpMode =
     (parameters_.getLpMethod() == CbcParameters::LPAuto) && (clp != nullptr)
     && !canRace;
-  if (autoLpMode) {
+  if (autoLpMode && solver->isProvenOptimal()) {
     double feats[OFCount];
     OsiFeatures::compute(feats, solver);
     const char *tag = cbcRecommendLpParam(feats);

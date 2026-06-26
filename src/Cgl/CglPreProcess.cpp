@@ -7642,7 +7642,9 @@ CglPreProcess::modified(OsiSolverInterface *model,
 #endif
   bool noStrengthening = false;
   for (int iPass = 0; iPass < numberPasses; iPass++) {
-    // Statistics
+    // Respect the preprocessing deadline — stop starting new passes when time is up.
+    if (CoinGetTimeOfDay() >= preDeadline_)
+      break;
     int numberFixed = 0;
     int numberTwo = twoCuts.sizeRowCuts();
     int numberStrengthened = 0;
@@ -8788,12 +8790,32 @@ CglPreProcess::modified(OsiSolverInterface *model,
 	If solution needs to be refreshed, do resolve or initialSolve as appropriate.
       */
       if (needResolve) {
+#ifdef CBC_HAS_CLP
+        // Helper: apply the preprocessing deadline to this LP solve so a single
+        // expensive re-solve cannot outlast the overall time budget.
+        auto applyPreDeadline = [&](OsiSolverInterface *m) {
+          OsiClpSolverInterface *clp = dynamic_cast<OsiClpSolverInterface *>(m);
+          if (clp && preDeadline_ < 1.0e99) {
+            double rem = std::max(preDeadline_ - CoinGetTimeOfDay(), 0.0);
+            clp->getModelPtr()->setMaximumWallSeconds(rem);
+          }
+        };
+        auto clearPreDeadline = [&](OsiSolverInterface *m) {
+          OsiClpSolverInterface *clp = dynamic_cast<OsiClpSolverInterface *>(m);
+          if (clp && preDeadline_ < 1.0e99)
+            clp->getModelPtr()->setMaximumWallSeconds(-1.0);
+        };
+        auto lpTimedOut = [&](OsiSolverInterface *m) -> bool {
+          OsiClpSolverInterface *clp = dynamic_cast<OsiClpSolverInterface *>(m);
+          return clp && clp->getModelPtr()->problemStatus() == 3; // stopped on time limit
+        };
+#else
+        auto applyPreDeadline = [](OsiSolverInterface *) {};
+        auto clearPreDeadline = [](OsiSolverInterface *) {};
+        auto lpTimedOut = [](OsiSolverInterface *) -> bool { return false; };
+#endif
         if (rebuilt) {
           // basis shot to bits?
-          //CoinWarmStartBasis *slack =
-          //dynamic_cast<CoinWarmStartBasis *>(newModel->getEmptyWarmStart()) ;
-          //newModel->setWarmStart(slack);
-          //delete slack ;
           bool saveHint;
           OsiHintStrength saveStrength;
           newModel->getHintParam(OsiDoPresolveInInitial, saveHint, saveStrength);
@@ -8802,12 +8824,15 @@ CglPreProcess::modified(OsiSolverInterface *model,
             newModel->setHintParam(OsiDoPresolveInInitial, true, OsiHintTry);
           newModel->setHintParam(OsiDoDualInInitial, true, OsiHintTry);
           double inspectLpStartNR = inspect_ ? CoinWallclockTime() : 0.0;
+          applyPreDeadline(newModel);
           newModel->initialSolve();
+          clearPreDeadline(newModel);
           if (inspect_) {
             FILE *fp = handler_->filePointer();
             if (fp) {
               const char *stat = newModel->isProvenOptimal() ? "optimal"
-                : newModel->isProvenPrimalInfeasible() ? "infeasible" : "not optimal";
+                : newModel->isProvenPrimalInfeasible() ? "infeasible"
+                : lpTimedOut(newModel) ? "time limit" : "not optimal";
               fprintf(fp, "  [Preproc pass %d.%d] needResolve (rebuilt) initialSolve: %.2fs  iters=%d  (%s)\n",
                 iBigPass, iPass, CoinWallclockTime() - inspectLpStartNR,
                 newModel->getIterationCount(), stat);
@@ -8815,6 +8840,12 @@ CglPreProcess::modified(OsiSolverInterface *model,
             }
           }
           newModel->setHintParam(OsiDoPresolveInInitial, saveHint, saveStrength);
+          if (lpTimedOut(newModel)) {
+            // LP interrupted by time limit — preprocessing stops here, model is
+            // returned as-is (without the current pass's cuts); the outer loop
+            // will see the deadline and stop cleanly.
+            break;
+          }
         } else {
 	  bool saveTakeHint;
 	  OsiHintStrength saveStrength;
@@ -8829,12 +8860,15 @@ CglPreProcess::modified(OsiSolverInterface *model,
 	  }
 #endif
 	  double inspectLpStartNR = inspect_ ? CoinWallclockTime() : 0.0;
+          applyPreDeadline(newModel);
 	  newModel->resolve();
+          clearPreDeadline(newModel);
 	  if (inspect_) {
 	    FILE *fp = handler_->filePointer();
 	    if (fp) {
 	      const char *stat = newModel->isProvenOptimal() ? "optimal"
-	        : newModel->isProvenPrimalInfeasible() ? "infeasible" : "not optimal";
+	        : newModel->isProvenPrimalInfeasible() ? "infeasible"
+                : lpTimedOut(newModel) ? "time limit" : "not optimal";
 	      fprintf(fp, "  [Preproc pass %d.%d] needResolve resolve: %.2fs  iters=%d  dualInfBefore=%d  useDual=%d  (%s)\n",
 	        iBigPass, iPass, CoinWallclockTime() - inspectLpStartNR,
 	        newModel->getIterationCount(), dualInfNR, (int)solveWithDual, stat);
@@ -8843,6 +8877,8 @@ CglPreProcess::modified(OsiSolverInterface *model,
 	  }
 	  newModel->setHintParam(OsiDoDualInResolve, saveTakeHint, saveStrength);
 	  solveWithDual = true;
+          if (lpTimedOut(newModel))
+            break;
         }
         numberIterationsPre_ += newModel->getIterationCount();
         feasible = newModel->isProvenOptimal();
@@ -8851,11 +8887,13 @@ CglPreProcess::modified(OsiSolverInterface *model,
           CoinWarmStartBasis *slack = dynamic_cast< CoinWarmStartBasis * >(newModel->getEmptyWarmStart());
           newModel->setWarmStart(slack);
           delete slack;
+          applyPreDeadline(newModel);
           newModel->resolve();
+          clearPreDeadline(newModel);
           numberIterationsPre_ += newModel->getIterationCount();
+          if (lpTimedOut(newModel))
+            break;
           feasible = newModel->isProvenOptimal();
-          //if (!feasible)
-          //newModel->writeMpsNative("infeas.mps",NULL,NULL,2,1);
         }
       }
       if (!feasible) {
@@ -8973,6 +9011,7 @@ CglPreProcess::CglPreProcess()
   , useElapsedTime_(true)
   , timeLimit_(COIN_DBL_MAX)
   , postProcDeadline_(-1.0)
+  , preDeadline_(1.0e100)
   , keepColumnNames_(false)
   , inspect_(false)
   , parityPresolve_(true)
@@ -8997,8 +9036,8 @@ CglPreProcess::CglPreProcess(const CglPreProcess &rhs)
   , useElapsedTime_(true)
   , timeLimit_(COIN_DBL_MAX)
   , postProcDeadline_(-1.0)
+  , preDeadline_(1.0e100)
   , keepColumnNames_(false)
-  , inspect_(rhs.inspect_)
   , parityPresolve_(rhs.parityPresolve_)
 {
   if (defaultHandler_) {
@@ -9134,6 +9173,7 @@ CglPreProcess::operator=(const CglPreProcess &rhs)
     cuts_ = rhs.cuts_;
     timeLimit_ = rhs.timeLimit_;
     postProcDeadline_ = rhs.postProcDeadline_;
+    preDeadline_ = rhs.preDeadline_;
     keepColumnNames_ = rhs.keepColumnNames_;
   }
   return *this;
@@ -10732,6 +10772,8 @@ void CglPreProcess::setTimeLimit(const double timeLimit, const bool useElapsedTi
 {
   this->timeLimit_ = timeLimit;
   this->useElapsedTime_ = useElapsedTime;
+  // Store absolute deadline so modified() can time-limit its LP re-solves.
+  preDeadline_ = (timeLimit < 1.0e99) ? CoinGetTimeOfDay() + timeLimit : 1.0e100;
 }
 
 void CglPreProcess::setKeepColumnNames(const bool keep)
