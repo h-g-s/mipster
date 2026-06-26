@@ -7,6 +7,7 @@
 #include <cmath> 
 #include <vector>
 #include <algorithm>
+#include <unordered_set>
 #include <cfloat>
 #include <climits>
 #include "CoinPragma.hpp" 
@@ -29,6 +30,7 @@
 #undef CBC_USE_PAPILO
 #endif
 #include "CglProbing.hpp"
+#include "CoinCutPool.hpp"
 #include "CglDuplicateRow.hpp"
 #include "CoinPresolveDupcol.hpp"
 #include "CglClique.hpp"
@@ -7786,6 +7788,124 @@ CglPreProcess::modified(OsiSolverInterface *model,
           probingCut->setMaxLookRoot(saveMaxLook);
           if (!iPass && (!cs.sizeColCuts() || iBigPass > 2))
             options_ &= ~64; // switch off heavy
+
+          // When probing generates an excessive number of row cuts, rank them
+          // by fitness and keep only the best.  Row cuts add NZ and make
+          // subsequent LP solves harder; column cuts are cheap bound
+          // tightenings and are always kept unfiltered.
+          //
+          // Strategy:
+          //   - strengthening cuts (those already stored in whichCut[]) are
+          //     kept unconditionally — they directly improve LP relaxation.
+          //   - all remaining row cuts are fed through CoinCutPool which
+          //     ranks by score = viol/activeCols and retains at most one best
+          //     cut per variable.
+          //   - range / >= lb row cuts that CoinCutPool cannot handle are
+          //     kept as-is.
+          //
+          // Threshold: filter when row cuts exceed 5× the number of rows
+          // (or 10 000, whichever is larger).
+          const int probingRowCutThreshold = std::max(5 * numberRows, 10000);
+          if (cs.sizeRowCuts() > probingRowCutThreshold) {
+            const int origRowCuts = cs.sizeRowCuts();
+
+            // Identify strengthening cuts (pointed to by whichCut[]) and
+            // save copies along with their row indices so we can re-establish
+            // the whichCut[] pointers after rebuilding cs.
+            struct StrCut { int row; OsiRowCut cut; };
+            std::vector<StrCut> strCuts;
+            strCuts.reserve(numberRows);
+            std::unordered_set<const OsiRowCut *> strPtrs;
+            for (int r = 0; r < numberRows; r++) {
+              if (whichCut[r]) {
+                strPtrs.insert(whichCut[r]);
+                strCuts.push_back({r, *whichCut[r]});
+              }
+            }
+
+            // Feed ALL non-strengthening row cuts through CoinCutPool after
+            // normalising to <= rhs form so every cut gets ranked by fitness:
+            //   <= ub cuts  : pass as-is
+            //   >= lb cuts  : negate all coefficients, rhs = -lb
+            //   range cuts  : use the more-violated side at the current LP sol
+            // Cuts reconstructed from the pool are re-inserted as pure <= ub
+            // cuts (lb = -inf), which is a valid equivalent form for LP solving.
+            const double *x = newModel->getColSolution();
+            CoinCutPool cutPool(x, numberColumns);
+            std::vector<double> negBuf; // reused buffer for negated coefficients
+            for (int ci = 0; ci < cs.sizeRowCuts(); ci++) {
+              const OsiRowCut *rc = cs.rowCutPtr(ci);
+              if (strPtrs.count(rc))
+                continue; // strengthening cuts handled separately
+              const CoinPackedVector &row = rc->row();
+              const int     nz    = row.getNumElements();
+              const int    *idxs  = row.getIndices();
+              const double *coefs = row.getElements();
+              const double  lb    = rc->lb();
+              const double  ub    = rc->ub();
+              if (lb <= -1.0e20) {
+                // Pure <= ub: pass directly
+                cutPool.add(idxs, coefs, nz, ub);
+              } else if (ub >= 1.0e20) {
+                // Pure >= lb: negate to <= -lb form
+                negBuf.resize(nz);
+                for (int k = 0; k < nz; k++) negBuf[k] = -coefs[k];
+                cutPool.add(idxs, negBuf.data(), nz, -lb);
+              } else {
+                // Range cut: pick the side with larger violation at x*
+                double act = 0.0;
+                for (int k = 0; k < nz; k++) act += coefs[k] * x[idxs[k]];
+                if (act >= 0.5 * (lb + ub)) {
+                  // ub side more likely violated
+                  cutPool.add(idxs, coefs, nz, ub);
+                } else {
+                  // lb side: negate
+                  negBuf.resize(nz);
+                  for (int k = 0; k < nz; k++) negBuf[k] = -coefs[k];
+                  cutPool.add(idxs, negBuf.data(), nz, -lb);
+                }
+              }
+            }
+            cutPool.removeNullCuts();
+
+            // Erase all row cuts (frees heap objects) and reset whichCut[].
+            for (int ci = cs.sizeRowCuts() - 1; ci >= 0; ci--)
+              cs.eraseRowCut(ci);
+            for (int r = 0; r < numberRows; r++)
+              whichCut[r] = nullptr;
+
+            // Re-insert strengthening cuts first and re-establish whichCut[].
+            // OsiCuts stores each cut as a separate heap-allocated object, so
+            // rowCutPtr() pointers remain stable across further inserts.
+            for (auto &sc : strCuts) {
+              int newIdx = cs.sizeRowCuts();
+              cs.insert(sc.cut);
+              whichCut[sc.row] = cs.rowCutPtr(newIdx);
+            }
+
+            // Re-insert pool-selected cuts (all in normalised <= ub form).
+            OsiRowCut tmp;
+            tmp.setLb(-COIN_DBL_MAX);
+            for (size_t ci = 0; ci < cutPool.numCuts(); ci++) {
+              tmp.setRow(cutPool.cutSize(ci), cutPool.cutIdxs(ci),
+                         cutPool.cutCoefs(ci));
+              tmp.setUb(cutPool.cutRHS(ci));
+              cs.insert(tmp);
+            }
+
+            if (inspect_) {
+              FILE *fp = handler_->filePointer();
+              if (fp) {
+                fprintf(fp,
+                  "  [Preproc pass %d.%d] Probing row cut filter: "
+                  "%d → %d (str=%zu pool=%zu threshold=%d)\n",
+                  iBigPass, iPass, origRowCuts, cs.sizeRowCuts(),
+                  strCuts.size(), cutPool.numCuts(),
+                  probingRowCutThreshold);
+                fflush(fp);
+              }
+            }
+          }
         }
 #if CBC_USEFUL_PRINTING > 0
         printf("Generator %d took %g seconds\n",
