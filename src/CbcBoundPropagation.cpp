@@ -206,13 +206,11 @@ bool CbcBoundPropagation::run(OsiSolverInterface *solver,
     }
   };
 
-  // ── Dirty-row tracking for FBBT ───────────────────────────────────────────
-  // On the first round every row containing a non-binary variable is eligible
-  // for FBBT.  On subsequent rounds only rows whose activity could have changed
-  // (because a variable's bound was updated in the previous round) are dirty.
-  //
-  // colToRows[colRowStart[j] .. colRowStart[j+1])  lists the rows containing
-  // column j.  Built once in O(nnz); reused across all rounds.
+  // ── Dirty-row tracking for FBBT (lazy) ───────────────────────────────────
+  // Round 1 always runs without a dirty hint (CoinBoundPropagation builds its
+  // own rowHasNonBinary).  The O(nnz) colToRows adjacency list and the dirty
+  // bitvector are built lazily after round 1 — only if there will be a round 2.
+  // This avoids paying the build cost for problems that converge in one round.
   const int nRows = matByRow->getNumRows();
   const int *matIdxs = matByRow->getIndices();
   const CoinBigIndex *matStart = matByRow->getVectorStarts();
@@ -225,14 +223,20 @@ bool CbcBoundPropagation::run(OsiSolverInterface *solver,
         hasNonBinaryVars = true;
   }
 
+  // Built lazily after round 1 (if a second round is needed).
+  bool dirtyInfraBuilt = false;
   std::vector< CoinBigIndex > colRowStart;
   std::vector< int > colRowList;
   std::vector< bool > rowHasNonBinaryBP;
   std::vector< bool > dirtyRowsFBBT;
 
-  if (hasNonBinaryVars) {
-    // Build rowHasNonBinaryBP[r]: does row r contain any non-binary variable?
-    // (Using the initial colType before any reclassification — conservative.)
+  // Build colToRows (column → rows adjacency) and rowHasNonBinaryBP once.
+  // Called at most once, the first time a round 2 is needed.
+  auto buildDirtyInfra = [&]() {
+    if (dirtyInfraBuilt)
+      return;
+    dirtyInfraBuilt = true;
+
     rowHasNonBinaryBP.assign(static_cast< size_t >(nRows), false);
     for (int r = 0; r < nRows; ++r) {
       const CoinBigIndex rs = matStart[r];
@@ -245,7 +249,7 @@ bool CbcBoundPropagation::run(OsiSolverInterface *solver,
       }
     }
 
-    // Build colToRows: for each column j, the list of rows that contain j.
+    // colToRows: for each column j, list the rows that contain it.
     colRowStart.assign(static_cast< size_t >(nCols + 1), CoinBigIndex(0));
     for (int r = 0; r < nRows; ++r) {
       const CoinBigIndex rs = matStart[r];
@@ -269,11 +273,8 @@ bool CbcBoundPropagation::run(OsiSolverInterface *solver,
       }
     }
 
-    // Round 1: all rows with non-binary variables are dirty.
     dirtyRowsFBBT.assign(static_cast< size_t >(nRows), false);
-    for (int r = 0; r < nRows; ++r)
-      if (rowHasNonBinaryBP[r]) dirtyRowsFBBT[r] = true;
-  }
+  };
 
   for (int round = 0; round < roundLimit; ++round) {
     diagRound = round;
@@ -293,9 +294,11 @@ bool CbcBoundPropagation::run(OsiSolverInterface *solver,
       return true;
     }
 
-    // Construction runs the algorithm; results are immediately available.
+    // Round 0 and 1 always use nullptr (no dirty hint; CoinBoundPropagation
+    // builds rowHasNonBinary internally).  Round 2+ use the dirty set built
+    // after round 1 completes.
     const std::vector< bool > *dirtyHint =
-      hasNonBinaryVars ? &dirtyRowsFBBT : nullptr;
+      (hasNonBinaryVars && dirtyInfraBuilt) ? &dirtyRowsFBBT : nullptr;
     CoinBoundPropagation bt(nCols, colType,
       curLB.data(), curUB.data(),
       matByRow, rowSense, rhs, range,
@@ -372,10 +375,13 @@ bool CbcBoundPropagation::run(OsiSolverInterface *solver,
     nBoundPropFixed_ += nFixed;
     nFBBTTightened_ += nFBBT;
 
-    // Update dirty-row set for the next round: mark rows adjacent to any
-    // column whose bounds changed (both binary fixings and FBBT tightenings
-    // change activity of their rows).
-    if (hasNonBinaryVars) {
+    // Update dirty-row set for the next round.
+    // We defer building the dirty infrastructure until after the second round
+    // completes with changes: problems that converge in 1-2 rounds don't pay
+    // the O(nnz) colToRows build cost (they're fast enough without it).
+    // Problems needing 3+ rounds amortise the build over many rounds.
+    if (hasNonBinaryVars && round >= 1) {
+      buildDirtyInfra();
       std::fill(dirtyRowsFBBT.begin(), dirtyRowsFBBT.end(), false);
       for (const auto &p : bounds) {
         const int col = static_cast< int >(p.first);
