@@ -292,6 +292,24 @@ CoinBoundPropagation::CoinBoundPropagation(
   if (hasNonBinary)
     fbbtTouched.assign(static_cast< size_t >(numCols), false);
 
+  // Per-row flag: does this row contain at least one non-binary variable?
+  // Computed once; lets binary-only rows keep the cheap rowNeedsProcessing()
+  // path even in mixed-variable problems (avoids scanRow() overhead on them).
+  std::vector< bool > rowHasNonBinary;
+  if (hasNonBinary) {
+    rowHasNonBinary.assign(nRows, false);
+    for (size_t r = 0; r < nRows; ++r) {
+      const CoinBigIndex rs = start[r];
+      const int len = length[r];
+      for (int k = 0; k < len; ++k) {
+        if (colType[idxs[rs + k]] != CoinColumnType::Binary) {
+          rowHasNonBinary[r] = true;
+          break;
+        }
+      }
+    }
+  }
+
 #ifdef COIN_BT_STATS
   rowStats_.reserve(nRows);
 #endif
@@ -326,9 +344,9 @@ CoinBoundPropagation::CoinBoundPropagation(
 
     for (int it = 0; it < numIter; ++it) {
       bool doKnapsack;
-      RowScanInfo scan; // only valid when hasNonBinary
+      RowScanInfo scan; // only valid when row has non-binary vars
 
-      if (hasNonBinary) {
+      if (hasNonBinary && rowHasNonBinary[idxRow]) {
         scan = scanRow(rowIdxs, rowCoefs, static_cast< int >(rowLength),
           multipliers[it], rhsAdjustments[it],
           mColLB, mColUB, colType, primalTolerance, infinity);
@@ -338,7 +356,7 @@ CoinBoundPropagation::CoinBoundPropagation(
           continue;
         }
       } else {
-        // Fast path: binary-only problem — keep original early-exit pre-check.
+        // Fast path: row has only binary vars — use cheap early-exit pre-check.
         doKnapsack = rowNeedsProcessing(rowIdxs, rowCoefs, rowLength,
           multipliers[it], rhsAdjustments[it],
           mColLB, mColUB, colType, primalTolerance, infinity);
@@ -361,7 +379,7 @@ CoinBoundPropagation::CoinBoundPropagation(
           snapLB[k] = mColLB[rowIdxs[k]];
           snapUB[k] = mColUB[rowIdxs[k]];
         }
-        if (hasNonBinary) {
+        if (hasNonBinary && rowHasNonBinary[idxRow]) {
           caseBEff = scan.bEff;
         } else {
           // Binary-only path: compute bEff by discounting fixed vars.
@@ -488,7 +506,7 @@ CoinBoundPropagation::CoinBoundPropagation(
       // Runs only when the combined scan found at least one non-binary variable
       // that FBBT might tighten.  Binary variables are intentionally skipped
       // here — they are handled (more powerfully) by the knapsack above.
-      if (hasNonBinary && scan.fbbtUseful) {
+      if (hasNonBinary && rowHasNonBinary[idxRow] && scan.fbbtUseful) {
         using CT = CoinColumnType;
         const double slack = scan.bEff - scan.minAct;
         rowSkipped = false;
