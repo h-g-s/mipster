@@ -50,6 +50,8 @@
 
 #include "Cbc_C_Interface.h"
 #include "CbcBoundPropagation.hpp"
+#include "CoinBoundPropagation.hpp"
+#include "CoinPackedMatrix.hpp"
 #include "CoinTime.hpp"
 #include "OsiClpSolverInterface.hpp"
 #include "OsiSolverInterface.hpp"
@@ -151,7 +153,8 @@ static void printUsage(const char *prog)
     "  --level <singletons|milpbt|fixpoint>  Aggression level (default: fixpoint)\n"
     "  --max-rounds <N>                       Max rounds for milpbt (default: 100)\n"
     "  --no-header                            Suppress CSV header\n"
-    "  --header-only                          Print CSV header and exit\n",
+    "  --header-only                          Print CSV header and exit\n"
+    "  --collect-cases <file.jsonl>           Collect bound-tightening cases to JSON-lines file\n",
     prog);
 }
 
@@ -165,6 +168,7 @@ int main(int argc, char *argv[])
   bool printHeader = true;
   bool headerOnly = false;
   const char *problemFile = nullptr;
+  const char *collectCasesFile = nullptr;
 
   for (int i = 1; i < argc; ++i) {
     if (strcmp(argv[i], "--header-only") == 0) {
@@ -192,6 +196,12 @@ int main(int argc, char *argv[])
       }
     } else if (strcmp(argv[i], "--fbbt") == 0) {
       // FBBT is now always enabled; flag accepted for compatibility but ignored.
+    } else if (strcmp(argv[i], "--collect-cases") == 0) {
+      if (i + 1 >= argc) {
+        fprintf(stderr, "Error: --collect-cases requires a filename argument\n");
+        return 2;
+      }
+      collectCasesFile = argv[++i];
     } else if (strcmp(argv[i], "--max-rounds") == 0) {
       if (i + 1 >= argc) {
         fprintf(stderr, "Error: --max-rounds requires an argument\n");
@@ -263,6 +273,13 @@ int main(int argc, char *argv[])
 
   /* ── Run bound propagation ────────────────────────────────────────── */
 
+  // Snapshot original bounds BEFORE running BP (needed for case collection).
+  std::vector<double> origLB, origUB;
+  if (collectCasesFile) {
+    origLB.assign(solver->getColLower(), solver->getColLower() + ncols);
+    origUB.assign(solver->getColUpper(), solver->getColUpper() + ncols);
+  }
+
   CbcBoundPropagation bp;
   const double t0 = CoinGetTimeOfDay();
   bp.run(solver, /*handler=*/nullptr, /*logLevel=*/0,
@@ -293,6 +310,53 @@ int main(int argc, char *argv[])
     stopReason, infeasible,
     elapsed,
     levelStr);
+
+  /* ── Collect bound-tightening cases (optional) ────────────────────── */
+
+  if (collectCasesFile &&
+      bp.stopReason() != CbcBoundPropagation::InfeasibleDetected) {
+    // Run ONE round of CoinBoundPropagation from the ORIGINAL bounds with
+    // case collection enabled — this captures all first-round tightenings
+    // that would happen in real use.
+    const double *rhs = solver->getRightHandSide();
+    const char *senses = solver->getRowSense();
+    const CoinPackedMatrix *matByRow = solver->getMatrixByRow();
+
+    CoinBoundPropagation bt(ncols,
+      solver->getColType(),
+      origLB.data(), origUB.data(),
+      matByRow,
+      senses, rhs,
+      /*rowRange=*/solver->getRowRange(),
+      /*primalTol=*/1e-7,
+      /*infinity=*/solver->getInfinity(),
+      /*maxRowNz=*/-1,
+      /*collectCases=*/true);
+
+    FILE *fout = fopen(collectCasesFile, "a");
+    if (!fout) {
+      fprintf(stderr, "Error: cannot open case output file '%s'\n", collectCasesFile);
+    } else {
+      for (const CoinBPCase &c : bt.bpCases()) {
+        // {"beff":...,"isUB":...,"isBinaryFix":...,"claimedBound":...,"oldLB":...,"oldUB":...,"tightenedIdx":...,"rowIdx":...,"vars":[[coef,lb,ub,type],...]}
+        fprintf(fout, "{\"beff\":%.17g,\"isUB\":%d,\"isBinaryFix\":%d,"
+          "\"claimedBound\":%.17g,\"oldLB\":%.17g,\"oldUB\":%.17g,"
+          "\"tightenedIdx\":%d,\"rowIdx\":%d,\"vars\":[",
+          c.beff, c.isUB ? 1 : 0, c.isBinaryFix ? 1 : 0,
+          c.claimedBound, c.oldLB, c.oldUB,
+          c.tightenedIdx, c.rowIdx);
+        for (int vi = 0; vi < static_cast< int >(c.vars.size()); ++vi) {
+          if (vi > 0) fputc(',', fout);
+          fprintf(fout, "[%.17g,%.17g,%.17g,%d]",
+            c.vars[vi].coef, c.vars[vi].lb, c.vars[vi].ub, (int)c.vars[vi].type);
+        }
+        fputs("]}\n", fout);
+      }
+      fclose(fout);
+      fprintf(stderr, "Collected %zu bound-tightening cases -> %s\n",
+        bt.bpCases().size(), collectCasesFile);
+    }
+  }
 
   Cbc_deleteModel(m);
   return 0;

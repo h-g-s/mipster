@@ -243,7 +243,8 @@ CoinBoundPropagation::CoinBoundPropagation(
   const double *rowRange,
   double primalTolerance,
   double infinity,
-  int maxRowNz)
+  int maxRowNz,
+  bool collectCases)
   : newBounds_()
   , infeasible_(false)
   , infeasibleRow_(-1)
@@ -344,6 +345,59 @@ CoinBoundPropagation::CoinBoundPropagation(
         }
       }
 
+      // ── Snapshot for case collection ──────────────────────────────────────
+      // Taken at scan time (before processRow or FBBT modify mColLB/mColUB).
+      // snapLB[k] / snapUB[k] are indexed by row position, matching scanRow's
+      // input and thus consistent with scan.bEff / scan.minAct.
+      std::vector< double > snapLB, snapUB;
+      double caseBEff = 0.0;
+      if (collectCases) {
+        snapLB.resize(rowLength);
+        snapUB.resize(rowLength);
+        for (size_t k = 0; k < rowLength; ++k) {
+          snapLB[k] = mColLB[rowIdxs[k]];
+          snapUB[k] = mColUB[rowIdxs[k]];
+        }
+        if (hasNonBinary) {
+          caseBEff = scan.bEff;
+        } else {
+          // Binary-only path: compute bEff by discounting fixed vars.
+          caseBEff = multipliers[it] * rhsAdjustments[it];
+          for (size_t k = 0; k < rowLength; ++k)
+            if (snapLB[k] == snapUB[k])
+              caseBEff -= (rowCoefs[k] * multipliers[it]) * snapLB[k];
+        }
+      }
+
+      // Helper: build a CoinBPCase from the scan-time snapshot.
+      // targetRowPos is the row position (0-based) of the tightened variable.
+      // Fixed variables (snapLB == snapUB) are excluded from vars[] since they
+      // are already discounted in caseBEff.
+      auto buildCase = [&](size_t targetRowPos,
+                            double oldLB, double oldUB,
+                            double claimedBound, bool isUB,
+                            bool isBinaryFix) -> CoinBPCase {
+        CoinBPCase cas;
+        cas.beff = caseBEff;
+        cas.rowIdx = static_cast< int >(idxRow);
+        cas.isUB = isUB;
+        cas.isBinaryFix = isBinaryFix;
+        cas.oldLB = oldLB;
+        cas.oldUB = oldUB;
+        cas.claimedBound = claimedBound;
+        cas.tightenedIdx = -1;
+        for (size_t k = 0; k < rowLength; ++k) {
+          if (snapLB[k] == snapUB[k])
+            continue; // fixed: skip (discounted in caseBEff)
+          if (k == targetRowPos)
+            cas.tightenedIdx = static_cast< int >(cas.vars.size());
+          cas.vars.push_back({ rowCoefs[k] * multipliers[it],
+                                snapLB[k], snapUB[k],
+                                static_cast< int >(colType[rowIdxs[k]]) });
+        }
+        return cas;
+      };
+
       if (doKnapsack) {
         knapsackRow.processRow(
           rowIdxs, rowCoefs, rowLength, rowSense,
@@ -389,6 +443,19 @@ CoinBoundPropagation::CoinBoundPropagation(
               fixedTo[origCol] = newVal;
               const double lb = static_cast< double >(newVal);
               const double ub = static_cast< double >(newVal);
+
+              if (collectCases && !snapLB.empty()) {
+                size_t rowPos = rowLength; // sentinel
+                for (size_t k2 = 0; k2 < rowLength; ++k2)
+                  if (rowIdxs[k2] == origCol) { rowPos = k2; break; }
+                if (rowPos < rowLength)
+                  // fixing to 0: UB lowered (isUB=true); fixing to 1: LB raised (isUB=false)
+                  bpCases_.push_back(buildCase(rowPos,
+                    snapLB[rowPos], snapUB[rowPos],
+                    static_cast< double >(newVal),
+                    newVal == 0, /*isBinaryFix=*/true));
+              }
+
               newBounds_.push_back(
                 std::make_pair(static_cast< size_t >(origCol),
                   std::make_pair(lb, ub)));
@@ -458,11 +525,13 @@ CoinBoundPropagation::CoinBoundPropagation(
                 newUB = std::floor(newUB + primalTolerance);
               if (newUB < mColUB[col] - primalTolerance) {
                 if (newUB < mColLB[col] - primalTolerance) {
-                  // New UB below current LB: infeasible.
                   infeasibleRow_ = static_cast< int >(idxRow);
                   infeasible_ = true;
                   return;
                 }
+                if (collectCases && !snapLB.empty())
+                  bpCases_.push_back(buildCase(static_cast< size_t >(k),
+                    snapLB[k], snapUB[k], newUB, /*isUB=*/true, /*isBin=*/false));
                 mColUB[col] = newUB;
                 fbbtTouched[static_cast< size_t >(col)] = true;
               }
@@ -472,11 +541,13 @@ CoinBoundPropagation::CoinBoundPropagation(
                 newLB = std::ceil(newLB - primalTolerance);
               if (newLB > mColLB[col] + primalTolerance) {
                 if (newLB > mColUB[col] + primalTolerance) {
-                  // New LB above current UB: infeasible.
                   infeasibleRow_ = static_cast< int >(idxRow);
                   infeasible_ = true;
                   return;
                 }
+                if (collectCases && !snapLB.empty())
+                  bpCases_.push_back(buildCase(static_cast< size_t >(k),
+                    snapLB[k], snapUB[k], newLB, /*isUB=*/false, /*isBin=*/false));
                 mColLB[col] = newLB;
                 fbbtTouched[static_cast< size_t >(col)] = true;
               }
@@ -484,8 +555,9 @@ CoinBoundPropagation::CoinBoundPropagation(
           }
         } else {
           // nUnbounded == 1: tighten only the one unbounded non-binary variable.
-          const int col = rowIdxs[scan.unboundedK];
-          const double c = rowCoefs[scan.unboundedK] * multipliers[it];
+          const int k1 = scan.unboundedK;
+          const int col = rowIdxs[k1];
+          const double c = rowCoefs[k1] * multipliers[it];
           const char ct = colType[col];
           if (ct != CT::Binary && ct != CT::SemiContinuous && ct != CT::SemiInteger
               && mColLB[col] != mColUB[col]) {
@@ -501,6 +573,9 @@ CoinBoundPropagation::CoinBoundPropagation(
                   infeasible_ = true;
                   return;
                 }
+                if (collectCases && !snapLB.empty())
+                  bpCases_.push_back(buildCase(static_cast< size_t >(k1),
+                    snapLB[k1], snapUB[k1], newUB, /*isUB=*/true, /*isBin=*/false));
                 mColUB[col] = newUB;
                 fbbtTouched[static_cast< size_t >(col)] = true;
               }
@@ -515,6 +590,9 @@ CoinBoundPropagation::CoinBoundPropagation(
                   infeasible_ = true;
                   return;
                 }
+                if (collectCases && !snapLB.empty())
+                  bpCases_.push_back(buildCase(static_cast< size_t >(k1),
+                    snapLB[k1], snapUB[k1], newLB, /*isUB=*/false, /*isBin=*/false));
                 mColLB[col] = newLB;
                 fbbtTouched[static_cast< size_t >(col)] = true;
               }
