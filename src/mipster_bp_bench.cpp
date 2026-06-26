@@ -107,7 +107,7 @@ static const char *CSV_HEADER =
   "instance,ncols,nrows,nbin,nint,"
   "singleton_fixed,singleton_tight,bp_fixed,fbbt_tightened,"
   "total_fixed,total_tight,rounds,"
-  "stop_reason,infeasible,time_sec,level";
+  "stop_reason,infeasible,time_sec,level,condition";
 
 static const char *stopReasonStr(CbcBoundPropagation::StopReason r)
 {
@@ -152,6 +152,7 @@ static void printUsage(const char *prog)
     "Options:\n"
     "  --level <singletons|milpbt|fixpoint>  Aggression level (default: fixpoint)\n"
     "  --max-rounds <N>                       Max rounds for milpbt (default: 100)\n"
+    "  --binary-only                          Disable non-binary FBBT (binary knapsack only)\n"
     "  --no-header                            Suppress CSV header\n"
     "  --header-only                          Print CSV header and exit\n"
     "  --collect-cases <file.jsonl>           Collect bound-tightening cases to JSON-lines file\n",
@@ -167,6 +168,7 @@ int main(int argc, char *argv[])
   int maxRounds = 100;
   bool printHeader = true;
   bool headerOnly = false;
+  bool binaryOnly = false;
   const char *problemFile = nullptr;
   const char *collectCasesFile = nullptr;
 
@@ -196,6 +198,8 @@ int main(int argc, char *argv[])
       }
     } else if (strcmp(argv[i], "--fbbt") == 0) {
       // FBBT is now always enabled; flag accepted for compatibility but ignored.
+    } else if (strcmp(argv[i], "--binary-only") == 0) {
+      binaryOnly = true;
     } else if (strcmp(argv[i], "--collect-cases") == 0) {
       if (i + 1 >= argc) {
         fprintf(stderr, "Error: --collect-cases requires a filename argument\n");
@@ -281,6 +285,8 @@ int main(int argc, char *argv[])
   }
 
   CbcBoundPropagation bp;
+  if (binaryOnly)
+    bp.setNonBinaryFBBT(false);
   const double t0 = CoinGetTimeOfDay();
   bp.run(solver, /*handler=*/nullptr, /*logLevel=*/0,
     level, maxRounds, /*timeLimit=*/1e100, /*startTime=*/t0);
@@ -300,7 +306,7 @@ int main(int argc, char *argv[])
   if (printHeader)
     printf("%s\n", CSV_HEADER);
 
-  printf("%s,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%s,%d,%.6f,%s\n",
+  printf("%s,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%s,%d,%.6f,%s,%s\n",
     instanceBasename(problemFile).c_str(),
     ncols, nrows, nbin, nint,
     singletonFixed, singletonTight,
@@ -309,7 +315,8 @@ int main(int argc, char *argv[])
     rounds,
     stopReason, infeasible,
     elapsed,
-    levelStr);
+    levelStr,
+    binaryOnly ? "binary_only" : "full_fbbt");
 
   /* ── Collect bound-tightening cases (optional) ────────────────────── */
 

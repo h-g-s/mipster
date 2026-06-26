@@ -67,6 +67,10 @@ public:
 
   CbcBoundPropagation();
 
+  /// Disable FBBT for non-binary variables (binary knapsack only).
+  /// Must be called before run(). Default: enabled.
+  void setNonBinaryFBBT(bool enable) { nonBinaryFBBT_ = enable; }
+
   /*! \brief Run bound propagation.
    *
    * Tightenings are applied in-place to \p solver.
@@ -132,6 +136,7 @@ private:
   double timeUsed_;
   int infeasibleRow_;
   int infeasibleCol_;
+  bool nonBinaryFBBT_; ///< Whether to run FBBT for non-binary variables
 };
 
 #endif // CbcBoundPropagation_hpp

@@ -152,7 +152,8 @@ public:
     double primalTolerance = 1e-7,
     double infinity = 1e50,
     int maxRowNz = -1,
-    bool collectCases = false);
+    bool collectCases = false,
+    bool nonBinaryFBBT = true);
 
   ~CoinBoundPropagation() = default;
 

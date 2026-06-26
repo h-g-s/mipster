@@ -244,7 +244,8 @@ CoinBoundPropagation::CoinBoundPropagation(
   double primalTolerance,
   double infinity,
   int maxRowNz,
-  bool collectCases)
+  bool collectCases,
+  bool nonBinaryFBBT)
   : newBounds_()
   , infeasible_(false)
   , infeasibleRow_(-1)
@@ -275,13 +276,15 @@ CoinBoundPropagation::CoinBoundPropagation(
   double multipliers[2];
   double rhsAdjustments[2];
 
-  // Pre-check: if the problem has any non-binary variable, we take the FBBT
-  // path (scanRow instead of rowNeedsProcessing) so that activity arithmetic
-  // can tighten continuous and general-integer bounds in the same loop.
+  // Pre-check: if the problem has any non-binary variable AND non-binary FBBT
+  // is enabled, we take the FBBT path (scanRow instead of rowNeedsProcessing)
+  // so that activity arithmetic can tighten continuous/general-integer bounds.
   bool hasNonBinary = false;
-  for (int j = 0; j < numCols && !hasNonBinary; ++j)
-    if (colType[j] != CoinColumnType::Binary)
-      hasNonBinary = true;
+  if (nonBinaryFBBT) {
+    for (int j = 0; j < numCols && !hasNonBinary; ++j)
+      if (colType[j] != CoinColumnType::Binary)
+        hasNonBinary = true;
+  }
 
   // Per-column touch flag: set when FBBT tightens a non-binary bound.
   // Only allocated when needed; avoids overhead for pure-binary problems.

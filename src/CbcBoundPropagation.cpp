@@ -31,6 +31,7 @@ CbcBoundPropagation::CbcBoundPropagation()
   , timeUsed_(0.0)
   , infeasibleRow_(-1)
   , infeasibleCol_(-1)
+  , nonBinaryFBBT_(true)
 {
 }
 
@@ -227,7 +228,9 @@ bool CbcBoundPropagation::run(OsiSolverInterface *solver,
     CoinBoundPropagation bt(nCols, colType,
       curLB.data(), curUB.data(),
       matByRow, rowSense, rhs, range,
-      primalTol, infinity);
+      primalTol, infinity,
+      /*maxRowNz=*/-1, /*collectCases=*/false,
+      nonBinaryFBBT_);
 
     ++nRoundsRun_;
 
