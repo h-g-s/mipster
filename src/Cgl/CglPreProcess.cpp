@@ -3119,10 +3119,29 @@ CglPreProcess::preProcessNonDefault(OsiSolverInterface &model,
     startModel2->getHintParam(OsiDoDualInInitial,
       saveTakeHint, saveStrength);
     startModel2->setHintParam(OsiDoDualInInitial, true, OsiHintTry);
+    // Cap initial LP solve: at most 120s or remaining preprocessing budget,
+    // whichever is smaller.  If it hits the cap the LP isn't optimal; we
+    // fall through to return NULL so the caller retries with simple presolve.
+    bool initialLpTimeLimitHit = false;
+#ifdef CBC_HAS_CLP
+    {
+      OsiClpSolverInterface *clpOsi = dynamic_cast<OsiClpSolverInterface *>(startModel2);
+      if (clpOsi && preDeadline_ < 1.0e99) {
+        double cap = std::min(preDeadline_ - CoinGetTimeOfDay(), 120.0);
+        clpOsi->getModelPtr()->setMaximumWallSeconds(std::max(cap, 0.0));
+      }
+      startModel2->initialSolve();
+      if (clpOsi && preDeadline_ < 1.0e99) {
+        initialLpTimeLimitHit = (clpOsi->getModelPtr()->problemStatus() == 3);
+        clpOsi->getModelPtr()->setMaximumWallSeconds(1.0e100);
+      }
+    }
+#else
     startModel2->initialSolve();
+#endif
     numberIterationsPre_ += startModel2->getIterationCount();
-    // double check
-    if (!startModel2->isProvenOptimal()) {
+    // double check (only if LP finished, not if we hit the 120s cap)
+    if (!initialLpTimeLimitHit && !startModel2->isProvenOptimal() && CoinGetTimeOfDay() < preDeadline_) {
       if (!startModel2->isProvenDualInfeasible()) {
 	// relax any fixed (or almost fixed) continuous variables
 	if (numberColumns==startModel2->getNumCols()) {
@@ -3149,14 +3168,36 @@ CglPreProcess::preProcessNonDefault(OsiSolverInterface &model,
         startModel2->getHintParam(OsiDoPresolveInInitial, saveHint, saveStrength);
         startModel2->setHintParam(OsiDoPresolveInInitial, true, OsiHintTry);
         startModel2->setHintParam(OsiDoDualInInitial, false, OsiHintTry);
+#ifdef CBC_HAS_CLP
+        {
+          OsiClpSolverInterface *clpOsi = dynamic_cast<OsiClpSolverInterface *>(startModel2);
+          if (clpOsi && preDeadline_ < 1.0e99)
+            clpOsi->getModelPtr()->setMaximumWallSeconds(std::max(preDeadline_ - CoinGetTimeOfDay(), 0.0));
+          startModel2->initialSolve();
+          if (clpOsi && preDeadline_ < 1.0e99)
+            clpOsi->getModelPtr()->setMaximumWallSeconds(1.0e100);
+        }
+#else
         startModel2->initialSolve();
+#endif
         numberIterationsPre_ += startModel2->getIterationCount();
-        if (!startModel2->isProvenDualInfeasible()) {
+        if (!startModel2->isProvenDualInfeasible() && CoinGetTimeOfDay() < preDeadline_) {
           CoinWarmStart *empty = startModel2->getEmptyWarmStart();
           startModel2->setWarmStart(empty);
           delete empty;
           startModel2->setHintParam(OsiDoDualInInitial, true, OsiHintTry);
+#ifdef CBC_HAS_CLP
+          {
+            OsiClpSolverInterface *clpOsi = dynamic_cast<OsiClpSolverInterface *>(startModel2);
+            if (clpOsi && preDeadline_ < 1.0e99)
+              clpOsi->getModelPtr()->setMaximumWallSeconds(std::max(preDeadline_ - CoinGetTimeOfDay(), 0.0));
+            startModel2->initialSolve();
+            if (clpOsi && preDeadline_ < 1.0e99)
+              clpOsi->getModelPtr()->setMaximumWallSeconds(1.0e100);
+          }
+#else
           startModel2->initialSolve();
+#endif
           numberIterationsPre_ += startModel2->getIterationCount();
         }
         startModel2->setHintParam(OsiDoPresolveInInitial, saveHint, saveStrength);
