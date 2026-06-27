@@ -15,6 +15,7 @@ libCoinUtils_la_SOURCES = \
 	CoinBoundPropagation.cpp \
 	CoinBronKerbosch.cpp \
 	CoinBuild.cpp \
+	CoinFBBT.cpp \
 	CoinCliqueExtender.cpp \
 	CoinCliqueList.cpp \
 	CoinCliqueSet.cpp \
@@ -89,6 +90,7 @@ libCoinUtils_la_SOURCES = \
 	CoinBoundPropagation.hpp \
 	CoinBronKerbosch.hpp \
 	CoinBuild.hpp \
+	CoinFBBT.hpp \
 	CoinCliqueExtender.hpp \
 	CoinCliqueList.hpp \
 	CoinCliqueSet.hpp \

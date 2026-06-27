@@ -25,11 +25,13 @@ CbcBoundPropagation::CbcBoundPropagation()
   : nSingletonTightened_(0)
   , nSingletonFixed_(0)
   , nBoundPropFixed_(0)
+  , nFBBTTightened_(0)
   , nRoundsRun_(0)
   , stopReason_(NotRun)
   , timeUsed_(0.0)
   , infeasibleRow_(-1)
   , infeasibleCol_(-1)
+  , nonBinaryFBBT_(true)
 {
 }
 
@@ -204,6 +206,134 @@ bool CbcBoundPropagation::run(OsiSolverInterface *solver,
     }
   };
 
+  // ── Dirty-row tracking for FBBT (lazy) ───────────────────────────────────
+  // Round 1 always runs without a dirty hint (CoinBoundPropagation builds its
+  // own rowHasNonBinary).  The O(nnz) colToRows adjacency list and the dirty
+  // bitvector are built lazily after round 1 — only if there will be a round 2.
+  // This avoids paying the build cost for problems that converge in one round.
+  const int nRows = matByRow->getNumRows();
+  const int *matIdxs = matByRow->getIndices();
+  const CoinBigIndex *matStart = matByRow->getVectorStarts();
+  const int *matLen = matByRow->getVectorLengths();
+
+  bool hasNonBinaryVars = false;
+  if (nonBinaryFBBT_) {
+    for (int j = 0; j < nCols && !hasNonBinaryVars; ++j)
+      if (colTypeBuf[j] != 1) // 1 = Binary
+        hasNonBinaryVars = true;
+  }
+
+  // Built lazily after round 1 (if a second round is needed).
+  bool dirtyInfraBuilt = false;
+  std::vector< CoinBigIndex > colRowStart;
+  std::vector< int > colRowList;
+  std::vector< double > colRowCoef; // coefficient of col j in each (col,row) entry
+  std::vector< bool > rowHasNonBinaryBP;
+  std::vector< char > rowHasBinaryBP; // char to allow .data() (vector<bool> lacks it)
+  std::vector< bool > dirtyRowsFBBT;
+
+  // Cached row min activity (for ≤ constraint FBBT, incremental updates).
+  // rowCachedMinAct[r] = sum(a>0: a*lb_j, a<0: a*ub_j) over all vars in row r.
+  // rowCachedNUnbLB[r] = number of vars with a*lb_j = -inf (contributes -inf to minAct).
+  // Valid when actCacheBuilt == true; updated incrementally from bound changes.
+  bool actCacheBuilt = false;
+  std::vector< double > rowCachedMinAct;
+  std::vector< int > rowCachedNUnbLB;
+
+  // Per-round buffer recording (col, oldLB, oldUB, newLB, newUB) for each committed
+  // bound change. Used in the post-round single adjacency pass that simultaneously
+  // updates the min-activity cache and marks dirty rows. Pre-allocated once, reused
+  // every round to avoid repeated heap allocations.
+  struct BoundChange {
+    int col;
+    double oldLB, oldUB, newLB, newUB;
+  };
+  std::vector< BoundChange > changedBounds;
+
+  // Build colToRows (column → rows adjacency) and rowHasNonBinaryBP once.
+  // Called at most once, the first time a round 2 is needed.
+  auto buildDirtyInfra = [&]() {
+    if (dirtyInfraBuilt)
+      return;
+    dirtyInfraBuilt = true;
+
+    rowHasNonBinaryBP.assign(static_cast< size_t >(nRows), false);
+    rowHasBinaryBP.assign(static_cast< size_t >(nRows), char(0));
+    for (int r = 0; r < nRows; ++r) {
+      const CoinBigIndex rs = matStart[r];
+      const int len = matLen[r];
+      for (int k = 0; k < len; ++k) {
+        const int j = matIdxs[rs + k];
+        if (colTypeBuf[j] != 1)
+          rowHasNonBinaryBP[r] = true;
+        else
+          rowHasBinaryBP[r] = char(1);
+      }
+    }
+
+    // colToRows: for each column j, list the rows and coefficients.
+    colRowStart.assign(static_cast< size_t >(nCols + 1), CoinBigIndex(0));
+    for (int r = 0; r < nRows; ++r) {
+      const CoinBigIndex rs = matStart[r];
+      const int len = matLen[r];
+      for (int k = 0; k < len; ++k)
+        ++colRowStart[matIdxs[rs + k] + 1];
+    }
+    for (int j = 0; j < nCols; ++j)
+      colRowStart[j + 1] += colRowStart[j];
+    colRowList.resize(static_cast< size_t >(colRowStart[nCols]));
+    colRowCoef.resize(static_cast< size_t >(colRowStart[nCols]));
+    {
+      std::vector< CoinBigIndex > pos(colRowStart.begin(),
+        colRowStart.begin() + nCols);
+      const double *matCoefs = matByRow->getElements();
+      for (int r = 0; r < nRows; ++r) {
+        const CoinBigIndex rs = matStart[r];
+        const int len = matLen[r];
+        for (int k = 0; k < len; ++k) {
+          const int j = matIdxs[rs + k];
+          const CoinBigIndex p = pos[j]++;
+          colRowList[p] = r;
+          colRowCoef[p] = matCoefs[rs + k];
+        }
+      }
+    }
+
+    // Initialise the row min-activity cache from the current bounds (curLB/curUB).
+    rowCachedMinAct.assign(static_cast< size_t >(nRows), 0.0);
+    rowCachedNUnbLB.assign(static_cast< size_t >(nRows), 0);
+    {
+      const double *matCoefs = matByRow->getElements();
+      for (int r = 0; r < nRows; ++r) {
+        const CoinBigIndex rs = matStart[r];
+        const int len = matLen[r];
+        double minA = 0.0;
+        int nUnbLB = 0;
+        for (int k = 0; k < len; ++k) {
+          const int j = matIdxs[rs + k];
+          const double a = matCoefs[rs + k];
+          const double lb = curLB[j], ub = curUB[j];
+          if (a > 0.0) {
+            if (lb <= -infinity)
+              ++nUnbLB;
+            else
+              minA += a * lb;
+          } else if (a < 0.0) {
+            if (ub >= infinity)
+              ++nUnbLB;
+            else
+              minA += a * ub;
+          }
+        }
+        rowCachedMinAct[r] = minA;
+        rowCachedNUnbLB[r] = nUnbLB;
+      }
+    }
+    actCacheBuilt = true;
+
+    dirtyRowsFBBT.assign(static_cast< size_t >(nRows), false);
+  };
+
   for (int round = 0; round < roundLimit; ++round) {
     diagRound = round;
     refreshColType(); // update binary/general-integer from current curLB/curUB
@@ -222,11 +352,23 @@ bool CbcBoundPropagation::run(OsiSolverInterface *solver,
       return true;
     }
 
-    // Construction runs the algorithm; results are immediately available.
+    // Round 0 and 1 always use nullptr (no dirty hint; CoinBoundPropagation
+    // builds rowHasNonBinary internally).  Round 2+ use the dirty set built
+    // after round 1 completes.
+    const std::vector< bool > *dirtyHint =
+      (hasNonBinaryVars && dirtyInfraBuilt) ? &dirtyRowsFBBT : nullptr;
+    const double *cachedMinAct = actCacheBuilt ? rowCachedMinAct.data() : nullptr;
+    const int *cachedNUnbLB = actCacheBuilt ? rowCachedNUnbLB.data() : nullptr;
+    const bool *hasBinaryRow =
+      dirtyInfraBuilt ? reinterpret_cast< const bool * >(rowHasBinaryBP.data()) : nullptr;
     CoinBoundPropagation bt(nCols, colType,
       curLB.data(), curUB.data(),
       matByRow, rowSense, rhs, range,
-      primalTol, infinity);
+      primalTol, infinity,
+      /*maxRowNz=*/-1, /*collectCases=*/false,
+      nonBinaryFBBT_, dirtyHint,
+      cachedMinAct, nullptr, cachedNUnbLB, nullptr,
+      hasBinaryRow);
 
     ++nRoundsRun_;
 
@@ -264,9 +406,13 @@ bool CbcBoundPropagation::run(OsiSolverInterface *solver,
       return false;
     }
 
-    // Apply the fixings from this round to curLB/curUB and to the solver
+    // Apply the fixings from this round to curLB/curUB and to the solver.
+    // newBounds_ contains binary fixings (first) then FBBT tightenings (appended
+    // at end of constructor), but we apply all in one loop.
     const auto &bounds = bt.updatedBounds();
     const int nNew = static_cast< int >(bounds.size());
+    const int nFBBT = bt.nContinuousTightened();
+    const int nFixed = nNew - nFBBT;
 
     if (nNew == 0) {
       stopReason_ = ReachedFixpoint;
@@ -280,34 +426,85 @@ bool CbcBoundPropagation::run(OsiSolverInterface *solver,
       break;
     }
 
+    // Commit bound changes and record old/new for the post-round adjacency pass.
+    changedBounds.clear();
     for (const auto &p : bounds) {
       const int col = static_cast< int >(p.first);
+      const double newLB = p.second.first;
+      const double newUB = p.second.second;
+      const double oldLB = curLB[col];
+      const double oldUB = curUB[col];
       // Check BEFORE updating curLB/curUB so the lambda sees the old bounds.
-      checkFixing(col, p.second.first, p.second.second, "propagation");
-      curLB[col] = p.second.first;
-      curUB[col] = p.second.second;
-      solver->setColLower(col, p.second.first);
-      solver->setColUpper(col, p.second.second);
+      checkFixing(col, newLB, newUB, "propagation");
+      curLB[col] = newLB;
+      curUB[col] = newUB;
+      solver->setColLower(col, newLB);
+      solver->setColUpper(col, newUB);
+      if (hasNonBinaryVars)
+        changedBounds.push_back({ col, oldLB, oldUB, newLB, newUB });
     }
 
-    nBoundPropFixed_ += nNew;
+    nBoundPropFixed_ += nFixed;
+    nFBBTTightened_ += nFBBT;
+
+    // Post-round single adjacency pass: update min-activity cache AND mark dirty rows.
+    // Deferred until round >= 1 so fast 1-2 round problems never pay the build cost.
+    if (hasNonBinaryVars && round >= 1) {
+      const bool cacheAlreadyBuilt = actCacheBuilt; // false on first call (round 1)
+      buildDirtyInfra(); // builds cache from current curLB/curUB (first time only)
+      std::fill(dirtyRowsFBBT.begin(), dirtyRowsFBBT.end(), false);
+      for (const BoundChange &bc : changedBounds) {
+        const double dLB = bc.newLB - bc.oldLB;
+        const double dUB = bc.newUB - bc.oldUB;
+        for (CoinBigIndex ri = colRowStart[bc.col];
+             ri < colRowStart[bc.col + 1]; ++ri) {
+          const int r = colRowList[ri];
+          // Update min-activity cache — only when the cache was already built
+          // BEFORE this round's changes (i.e., not on the initial build round).
+          // On the initial build, curLB/curUB already include round 1's changes,
+          // so applying the deltas again would double-count.
+          if (cacheAlreadyBuilt) {
+            const double a = colRowCoef[ri];
+            if (a > 0.0 && dLB != 0.0) {
+              if (bc.oldLB <= -infinity) {
+                --rowCachedNUnbLB[r];
+                rowCachedMinAct[r] += a * bc.newLB;
+              } else {
+                rowCachedMinAct[r] += a * dLB;
+              }
+            } else if (a < 0.0 && dUB != 0.0) {
+              if (bc.oldUB >= infinity) {
+                --rowCachedNUnbLB[r];
+                rowCachedMinAct[r] += a * bc.newUB;
+              } else {
+                rowCachedMinAct[r] += a * dUB;
+              }
+            }
+          }
+          // Mark dirty rows for next round.
+          if (rowHasNonBinaryBP[r])
+            dirtyRowsFBBT[r] = true;
+        }
+      }
+    } // if (hasNonBinaryVars && round >= 1)
 
     if (logLevel >= 2)
-      printf("  Bound propagation: round %d fixed %d variables "
-             "(total %d).\n",
-        nRoundsRun_, nNew, nBoundPropFixed_);
+      printf("  Bound propagation: round %d fixed %d vars, FBBT tightened %d"
+             " (total fixed %d).\n",
+        nRoundsRun_, nFixed, nFBBT, nBoundPropFixed_);
   }
 
   if (stopReason_ == NotRun) {
     // Exited by roundLimit without fixpoint
     stopReason_ = HitMaxRounds;
   }
+
   timeUsed_ = (CoinGetTimeOfDay()) - t0;
 
   if (logLevel >= 1) {
     const int totalFixed = nSingletonFixed_ + nBoundPropFixed_;
-    printf("  Bound propagation fixed %d vars in %.3f s.\n",
-      totalFixed, timeUsed_);
+    printf("  Bound propagation fixed %d vars, FBBT tightened %d in %.3f s.\n",
+      totalFixed, nFBBTTightened_, timeUsed_);
   }
 
   return true;

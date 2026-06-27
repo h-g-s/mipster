@@ -67,6 +67,10 @@ public:
 
   CbcBoundPropagation();
 
+  /// Disable FBBT for non-binary variables (binary knapsack only).
+  /// Must be called before run(). Default: enabled.
+  void setNonBinaryFBBT(bool enable) { nonBinaryFBBT_ = enable; }
+
   /*! \brief Run bound propagation.
    *
    * Tightenings are applied in-place to \p solver.
@@ -78,18 +82,19 @@ public:
    * \param maxRounds  Maximum MILPbt rounds (only used when level == MILPbt).
    * \param timeLimit  Budget in seconds; use a large value to disable.
    * \param startTime  Reference elapsed time measured before calling run().
-   *                   measured BEFORE calling run().
-   *
    * \return true if the problem is (still) feasible, false if infeasibility
    *         was proved during bound propagation.
    */
   bool run(OsiSolverInterface *solver,
-    CoinMessageHandler *handler,
-    int logLevel,
-    Level level,
-    int maxRounds,
-    double timeLimit,
-    double startTime);
+   CoinMessageHandler *handler,
+   int logLevel,
+   Level level,
+   int maxRounds,
+   double timeLimit,
+   double startTime);
+
+  /// Number of variables with at least one bound tightened by FBBT phase.
+  int nFBBTTightened() const { return nFBBTTightened_; }
 
   /// Number of variables tightened (not fully fixed) by singleton step.
   int nSingletonTightened() const { return nSingletonTightened_; }
@@ -125,11 +130,13 @@ private:
   int nSingletonTightened_;
   int nSingletonFixed_;
   int nBoundPropFixed_;
+  int nFBBTTightened_;
   int nRoundsRun_;
   StopReason stopReason_;
   double timeUsed_;
   int infeasibleRow_;
   int infeasibleCol_;
+  bool nonBinaryFBBT_; ///< Whether to run FBBT for non-binary variables
 };
 
 #endif // CbcBoundPropagation_hpp
