@@ -155,7 +155,8 @@ static void printUsage(const char *prog)
     "  --binary-only                          Disable non-binary FBBT (binary knapsack only)\n"
     "  --no-header                            Suppress CSV header\n"
     "  --header-only                          Print CSV header and exit\n"
-    "  --collect-cases <file.jsonl>           Collect bound-tightening cases to JSON-lines file\n",
+    "  --collect-cases <file.jsonl>           Collect bound-tightening cases to JSON-lines file\n"
+    "  --write-tightened <file.mps.gz>        Write tightened MPS after BP (if not infeasible)\n",
     prog);
 }
 
@@ -171,6 +172,7 @@ int main(int argc, char *argv[])
   bool binaryOnly = false;
   const char *problemFile = nullptr;
   const char *collectCasesFile = nullptr;
+  const char *writeTightenedFile = nullptr;
 
   for (int i = 1; i < argc; ++i) {
     if (strcmp(argv[i], "--header-only") == 0) {
@@ -206,6 +208,12 @@ int main(int argc, char *argv[])
         return 2;
       }
       collectCasesFile = argv[++i];
+    } else if (strcmp(argv[i], "--write-tightened") == 0) {
+      if (i + 1 >= argc) {
+        fprintf(stderr, "Error: --write-tightened requires a filename argument\n");
+        return 2;
+      }
+      writeTightenedFile = argv[++i];
     } else if (strcmp(argv[i], "--max-rounds") == 0) {
       if (i + 1 >= argc) {
         fprintf(stderr, "Error: --max-rounds requires an argument\n");
@@ -317,6 +325,23 @@ int main(int argc, char *argv[])
     elapsed,
     levelStr,
     binaryOnly ? "binary_only" : "full_fbbt");
+
+  /* ── Write tightened MPS (optional) ──────────────────────────────── */
+
+  if (writeTightenedFile && !infeasible) {
+    // OsiClpSolverInterface::writeMps(stem, ext) internally calls writeMpsNative
+    // which always passes compression=1 to CoinMpsIO, so the output file is
+    // always gzip-compressed and named "stem.ext.gz".
+    // Strip trailing .gz and .mps from the user-supplied path to get the stem.
+    std::string outPath = writeTightenedFile;
+    if (outPath.size() > 3 && outPath.substr(outPath.size() - 3) == ".gz")
+      outPath = outPath.substr(0, outPath.size() - 3);
+    if (outPath.size() > 4 && outPath.substr(outPath.size() - 4) == ".mps")
+      outPath = outPath.substr(0, outPath.size() - 4);
+    // writeMps("stem", "mps") creates "stem.mps.gz"
+    solver->writeMps(outPath.c_str(), "mps");
+    fprintf(stderr, "Tightened MPS written to %s.mps.gz\n", outPath.c_str());
+  }
 
   /* ── Collect bound-tightening cases (optional) ────────────────────── */
 
