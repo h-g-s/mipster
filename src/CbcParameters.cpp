@@ -2177,7 +2177,7 @@ void CbcParameters::addCbcSolverDblParams() {
       "active ranking metric (-cutRankingMetric), sorted best-first, and "
       "added greedily until the remaining budget is consumed.\n"
       "\n"
-      "Set to -1 (default) to disable the limit (original behaviour).\n"
+      "Set to -1 to disable the limit (original behaviour); default is 4.0.\n"
       "A factor of 1.0 uses the same formula as the global-cut injection "
       "budget, but now also trims generator cuts (which were previously "
       "uncapped).  Values < 1.0 are more aggressive; values > 1.0 are "
