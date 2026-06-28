@@ -14,6 +14,7 @@
 #ifndef COIN_FBBT_HPP
 #define COIN_FBBT_HPP
 
+#include <cstddef>
 #include <cstdint>
 #include <utility>
 #include <vector>
