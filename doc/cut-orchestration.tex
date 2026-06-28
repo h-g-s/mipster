@@ -2135,4 +2135,37 @@ File & Role\\
 \bottomrule
 \end{tabular}
 
+\section*{Negative results / failed experiments}
+
+\subsection*{Preprocessing probing row-cut filter (2026-06)}
+
+\textbf{Hypothesis:} When \texttt{CglProbing} generates a large number of row cuts during
+preprocessing passes (observed: 890\,K cuts on \texttt{rocII-5-11}, similar explosions on
+\texttt{supportcase10} and \texttt{cdma}), filtering them through a fitness-ranked pool
+(\texttt{CoinCutPool}, score $= \mathrm{viol}/\mathrm{activeCols}$, threshold
+$\max(5\!\cdot\!\mathrm{rows},\,10\,000)$) before LP re-insertion would reduce LP NZ growth
+and therefore shorten preprocessing.
+
+\textbf{Result: no meaningful improvement.}
+A 17-instance $\times$ 2-condition (filter / no-filter) experiment on MIPLIB-2017+SPP
+instances (\texttt{probing\_filter\_20260628\_093943}) showed:
+
+\begin{itemize}
+  \item Preprocessing times differed by $<15\%$ between conditions, well within noise.
+  \item Nodes explored were essentially identical (0 for most instances).
+  \item The worst-case instances (\texttt{supportcase10}, \texttt{cdma}) timed out in
+        both conditions.
+\end{itemize}
+
+\textbf{Root cause:} The bottleneck is \emph{cut generation time}, not LP solve time.
+\texttt{CglProbing} can spend thousands of seconds generating cuts before the filter even
+activates.  The filter only acts on the resulting \texttt{OsiCuts} object; it does not
+shorten the generation itself.  Additionally, for instances like \texttt{usafa}, the
+bottleneck is the initial LP relaxation (3600\,s) before preprocessing begins — a separate
+issue.
+
+\textbf{Follow-up direction:} The correct fix is a time limit \emph{inside}
+\texttt{CglProbing::generateCutsAndModify} so that the generator itself aborts when
+preprocessing wall-clock budget is nearly exhausted.
+
 \end{document}
