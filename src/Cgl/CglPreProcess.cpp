@@ -7821,7 +7821,22 @@ CglPreProcess::modified(OsiSolverInterface *model,
               fflush(fp);
             }
           }
+          // Cap CglProbing generation time to the remaining preprocessing
+          // budget so that a single pass cannot consume all the time.
+          double saveMaxSeconds = probingCut->getMaxSeconds();
+          if (preDeadline_ < 1.0e99) {
+            double remaining = preDeadline_ - CoinGetTimeOfDay();
+            if (remaining <= 0.0) {
+              // Budget already exhausted — skip this generator entirely.
+              probingCut->setMaxElementsRoot(saveMaxElements);
+              probingCut->setMaxProbeRoot(saveMaxProbe);
+              probingCut->setMaxLookRoot(saveMaxLook);
+              continue;
+            }
+            probingCut->setMaxSeconds(remaining);
+          }
           probingCut->generateCutsAndModify(*newModel, cs, &info);
+          probingCut->setMaxSeconds(saveMaxSeconds);
           probingCut->setMaxElementsRoot(saveMaxElements);
           probingCut->setMaxProbeRoot(saveMaxProbe);
           probingCut->setMaxLookRoot(saveMaxLook);

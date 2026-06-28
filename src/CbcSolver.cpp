@@ -5612,6 +5612,22 @@ int CbcSolver::solveInitialLp(
               statistics.seconds = CoinCpuTime() - time1a;
               statistics.elapsed_seconds = CoinWallclockTime();
               printGeneralMessage(model_, buffer.str());
+              // Print a "Result - " line so that result parsers see a proper
+              // status.  B&B cannot run without a proven-optimal LP relaxation
+              // so we exit here — no preprocessing or B&B will follow.
+              {
+                std::ostringstream res;
+                res << std::endl;
+                if (iStatus == 1)
+                  res << "Result - Linear relaxation infeasible" << std::endl
+                      << "Problem proven infeasible" << std::endl;
+                else if (iStatus == 2)
+                  res << "Result - Linear relaxation unbounded" << std::endl;
+                else
+                  res << "Result - Stopped on time limit" << std::endl
+                      << "No feasible solution found" << std::endl;
+                printGeneralMessage(model_, res.str());
+              }
               return 1;
             }
             clpSolver->setSpecialOptions(
@@ -5631,6 +5647,8 @@ int CbcSolver::solveInitialLp(
                 babModel_->setProblemStatus(1);
                 babModel_->setSecondaryStatus(4);
               }
+              printGeneralMessage(model_,
+                "\nResult - Stopped on time limit\nNo feasible solution found\n");
               return 1;
             }
             if (model_.getMaximumNodes() == -987654321) {
