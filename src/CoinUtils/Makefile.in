@@ -125,14 +125,14 @@ LTLIBRARIES = $(noinst_LTLIBRARIES)
 libCoinUtils_la_LIBADD =
 am_libCoinUtils_la_OBJECTS = CoinAdjacencyVector.lo CoinAlloc.lo \
 	CoinBoundPropagation.lo CoinBronKerbosch.lo CoinBuild.lo \
-	CoinFBBT.lo \
-	CoinCliqueExtender.lo CoinCliqueList.lo CoinCliqueSet.lo \
-	CoinConflictGraph.lo CoinCutPool.lo CoinDenseFactorization.lo \
-	CoinDenseVector.lo CoinDynamicConflictGraph.lo CoinError.lo \
-	CoinFactorization1.lo CoinFactorization2.lo \
-	CoinFactorization3.lo CoinFactorization4.lo CoinFileIO.lo \
-	CoinFinite.lo CoinIndexedVector.lo CoinKnapsackRow.lo \
-	CoinLpIO.lo CoinMessage.lo CoinMessageHandler.lo CoinModel.lo \
+	CoinFBBT.lo CoinCliqueExtender.lo CoinCliqueList.lo \
+	CoinCliqueSet.lo CoinConflictGraph.lo CoinCutPool.lo \
+	CoinDenseFactorization.lo CoinDenseVector.lo \
+	CoinDynamicConflictGraph.lo CoinError.lo CoinFactorization1.lo \
+	CoinFactorization2.lo CoinFactorization3.lo \
+	CoinFactorization4.lo CoinFileIO.lo CoinFinite.lo \
+	CoinIndexedVector.lo CoinKnapsackRow.lo CoinLpIO.lo \
+	CoinMessage.lo CoinMessageHandler.lo CoinModel.lo \
 	CoinModelUseful.lo CoinModelUseful2.lo CoinMpsIO.lo \
 	CoinNodeHeap.lo CoinOddWheelSeparator.lo \
 	CoinOslFactorization.lo CoinOslFactorization2.lo \
@@ -177,14 +177,14 @@ am__maybe_remake_depfiles = depfiles
 am__depfiles_remade = ./$(DEPDIR)/CoinAdjacencyVector.Plo \
 	./$(DEPDIR)/CoinAlloc.Plo ./$(DEPDIR)/CoinBoundPropagation.Plo \
 	./$(DEPDIR)/CoinBronKerbosch.Plo ./$(DEPDIR)/CoinBuild.Plo \
-	./$(DEPDIR)/CoinFBBT.Plo \
 	./$(DEPDIR)/CoinCliqueExtender.Plo \
 	./$(DEPDIR)/CoinCliqueList.Plo ./$(DEPDIR)/CoinCliqueSet.Plo \
 	./$(DEPDIR)/CoinConflictGraph.Plo ./$(DEPDIR)/CoinCutPool.Plo \
 	./$(DEPDIR)/CoinDenseFactorization.Plo \
 	./$(DEPDIR)/CoinDenseVector.Plo \
 	./$(DEPDIR)/CoinDynamicConflictGraph.Plo \
-	./$(DEPDIR)/CoinError.Plo ./$(DEPDIR)/CoinFactorization1.Plo \
+	./$(DEPDIR)/CoinError.Plo ./$(DEPDIR)/CoinFBBT.Plo \
+	./$(DEPDIR)/CoinFactorization1.Plo \
 	./$(DEPDIR)/CoinFactorization2.Plo \
 	./$(DEPDIR)/CoinFactorization3.Plo \
 	./$(DEPDIR)/CoinFactorization4.Plo ./$(DEPDIR)/CoinFileIO.Plo \
@@ -720,7 +720,6 @@ includecoin_HEADERS = \
 	CoinDynamicConflictGraph.hpp \
 	CoinKnapsackRow.hpp \
 	CoinBoundPropagation.hpp \
-	CoinFBBT.hpp \
 	CoinTerm.hpp \
 	CoinNodeHeap.hpp \
 	CoinOddWheelSeparator.hpp \
@@ -796,7 +795,6 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/CoinBoundPropagation.Plo@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/CoinBronKerbosch.Plo@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/CoinBuild.Plo@am__quote@ # am--include-marker
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/CoinFBBT.Plo@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/CoinCliqueExtender.Plo@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/CoinCliqueList.Plo@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/CoinCliqueSet.Plo@am__quote@ # am--include-marker
@@ -806,6 +804,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/CoinDenseVector.Plo@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/CoinDynamicConflictGraph.Plo@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/CoinError.Plo@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/CoinFBBT.Plo@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/CoinFactorization1.Plo@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/CoinFactorization2.Plo@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/CoinFactorization3.Plo@am__quote@ # am--include-marker
@@ -1023,7 +1022,6 @@ distclean: distclean-am
 	-rm -f ./$(DEPDIR)/CoinBoundPropagation.Plo
 	-rm -f ./$(DEPDIR)/CoinBronKerbosch.Plo
 	-rm -f ./$(DEPDIR)/CoinBuild.Plo
-	-rm -f ./$(DEPDIR)/CoinFBBT.Plo
 	-rm -f ./$(DEPDIR)/CoinCliqueExtender.Plo
 	-rm -f ./$(DEPDIR)/CoinCliqueList.Plo
 	-rm -f ./$(DEPDIR)/CoinCliqueSet.Plo
@@ -1033,6 +1031,7 @@ distclean: distclean-am
 	-rm -f ./$(DEPDIR)/CoinDenseVector.Plo
 	-rm -f ./$(DEPDIR)/CoinDynamicConflictGraph.Plo
 	-rm -f ./$(DEPDIR)/CoinError.Plo
+	-rm -f ./$(DEPDIR)/CoinFBBT.Plo
 	-rm -f ./$(DEPDIR)/CoinFactorization1.Plo
 	-rm -f ./$(DEPDIR)/CoinFactorization2.Plo
 	-rm -f ./$(DEPDIR)/CoinFactorization3.Plo
@@ -1143,7 +1142,6 @@ maintainer-clean: maintainer-clean-am
 	-rm -f ./$(DEPDIR)/CoinBoundPropagation.Plo
 	-rm -f ./$(DEPDIR)/CoinBronKerbosch.Plo
 	-rm -f ./$(DEPDIR)/CoinBuild.Plo
-	-rm -f ./$(DEPDIR)/CoinFBBT.Plo
 	-rm -f ./$(DEPDIR)/CoinCliqueExtender.Plo
 	-rm -f ./$(DEPDIR)/CoinCliqueList.Plo
 	-rm -f ./$(DEPDIR)/CoinCliqueSet.Plo
@@ -1153,6 +1151,7 @@ maintainer-clean: maintainer-clean-am
 	-rm -f ./$(DEPDIR)/CoinDenseVector.Plo
 	-rm -f ./$(DEPDIR)/CoinDynamicConflictGraph.Plo
 	-rm -f ./$(DEPDIR)/CoinError.Plo
+	-rm -f ./$(DEPDIR)/CoinFBBT.Plo
 	-rm -f ./$(DEPDIR)/CoinFactorization1.Plo
 	-rm -f ./$(DEPDIR)/CoinFactorization2.Plo
 	-rm -f ./$(DEPDIR)/CoinFactorization3.Plo
