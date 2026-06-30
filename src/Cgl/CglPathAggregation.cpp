@@ -19,6 +19,7 @@
 #include "CoinPackedMatrix.hpp"
 #include "CoinPackedVector.hpp"
 #include "CoinPragma.hpp"
+#include "CoinTime.hpp"
 #include "OsiRowCut.hpp"
 #include "OsiSolverInterface.hpp"
 
@@ -431,9 +432,22 @@ void CglPathAggregation::generateCuts(const OsiSolverInterface &si,
   // ----------------------------------------------------------
   // 6. Main loop: iterate over seed rows
   // ----------------------------------------------------------
+  // Compute absolute wall-clock deadline.  maxSeconds_ > 0: remaining budget.
+  // maxSeconds_ < 0: sentinel "budget expired" (set by CbcCutGenerator).
+  // maxSeconds_ == 0: no active time limit.
+  if (maxSeconds_ < 0.0)
+    return; // budget already expired before we started
+  const double wallDeadline = (maxSeconds_ > 0.0)
+    ? CoinGetTimeOfDay() + maxSeconds_
+    : std::numeric_limits< double >::max();
+
   for (int seedRow = 0; seedRow < nRows && generated < maxCuts_; ++seedRow) {
     if (rowType[seedRow] == kUnusable)
       continue;
+    // Check wall-clock deadline on every non-skipped seed row.
+    // Skip iRow==0 since the deadline was just computed above.
+    if (seedRow > 0 && CoinGetTimeOfDay() >= wallDeadline)
+      break;
 
     std::vector< double > seedScales;
     if (rowType[seedRow] == kLeq || rowType[seedRow] == kGeq) {

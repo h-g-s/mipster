@@ -11,10 +11,12 @@
 //#include <cmath>
 //#include <cstdlib>
 #include <cassert>
+#include <limits>
 #include "CoinPragma.hpp"
 #include "CoinHelperFunctions.hpp"
 #include "CoinPackedMatrix.hpp"
 #include "CoinPackedVector.hpp"
+#include "CoinTime.hpp"
 #ifdef CBC_HAS_CLP
 #include "OsiClpSolverInterface.hpp"
 #endif
@@ -29,6 +31,11 @@ CglMixedIntegerRounding2::generateCuts(const OsiSolverInterface& si,
 				      OsiCuts& cs,
 				      const CglTreeInfo info)
 {
+  // Fast-path: skip all work (including the expensive mixIntRoundPreprocess)
+  // if the time budget is already exhausted when we are called.
+  // CbcCutGenerator sets maxSeconds_ = -1.0 as a sentinel for "budget expired".
+  if (maxSeconds_ < 0.0)
+    return;
 
   // If the LP or integer presolve is used, then need to redo preprocessing
   // everytime this function is called. Otherwise, just do once.
@@ -188,19 +195,12 @@ CglMixedIntegerRounding2::generateCuts(const OsiSolverInterface& si,
   // There are no duplicates but this is faster
   matrixByRow.submatrixOfWithDuplicates(tempMatrixByRow, numRows_, indRows_);
   CoinPackedMatrix matrixByCol(matrixByRow,0,0,true);
-  //matrixByCol.reverseOrdering();
-  //const CoinPackedMatrix & matrixByRow = *si.getMatrixByRow();
   const double* LHS        = si.getRowActivity();
-  //const double* coefByRow  = matrixByRow.getElements();
-  //const int* colInds       = matrixByRow.getIndices();
-  //const int* rowStarts     = matrixByRow.getVectorStarts();
 
   // get matrix by column
-  //const CoinPackedMatrix & matrixByCol = *si.getMatrixByCol();
   const double* coefByCol  = matrixByCol.getElements();
   const int* rowInds       = matrixByCol.getIndices();
   const CoinBigIndex* colStarts     = matrixByCol.getVectorStarts();
-
 
   generateMirCuts(si, xlp, colUpperBound, colLowerBound,
 		  matrixByRow,  LHS, //coefByRow,
@@ -858,7 +858,17 @@ CglMixedIntegerRounding2::generateMirCuts(
     workVectors[i].reserve(si.getNumCols()+MAXAGGR_+1);
   CoinIndexedVector setRowsAggregated(si.getNumRows());
   CoinAbsFltEq tolTest(1.0e-4);
+  // Compute absolute wall-clock deadline.  maxSeconds_ > 0: remaining budget.
+  // maxSeconds_ < 0: sentinel "budget expired" (set by CbcCutGenerator).
+  // maxSeconds_ == 0: no active time limit.
+  const double wallDeadline = (maxSeconds_ > 0.0)
+    ? CoinGetTimeOfDay() + maxSeconds_
+    : (maxSeconds_ < 0.0 ? 0.0   // already expired — all deadline checks fire
+                         : std::numeric_limits< double >::max());
   for (int iRow = 0; iRow < numRowMixAndRowContVBAndRowInt; ++iRow) {
+    // Check deadline — fires for any row including iRow==0 (sentinel case).
+    if (CoinGetTimeOfDay() >= wallDeadline)
+      break;
 
     int rowSelected;  // row selected to be aggregated next
     int colSelected;  // column selected for pivot in aggregation
@@ -870,8 +880,16 @@ CglMixedIntegerRounding2::generateMirCuts(
     double rhsAggregated;
     // create a set with the indices of rows selected
     setRowsAggregated.clear();
+    bool aggrDeadlineReached = false;
     // loop until the maximum number of aggregated rows is reached
     for (int iAggregate = 0; iAggregate < MAXAGGR_; ++iAggregate) {
+      // cMirSeparation is O(numInt²) — on large LPs with many accumulated cuts
+      // a single iAggregate iteration can take tens of seconds.  Check the
+      // deadline here too so we don't overshoot by more than one aggregation.
+      if (iAggregate > 0 && CoinGetTimeOfDay() >= wallDeadline) {
+        aggrDeadlineReached = true;
+        break;
+      }
       if (iAggregate == 0) {
 	
 	// select row
@@ -1058,6 +1076,8 @@ CglMixedIntegerRounding2::generateMirCuts(
       }
     }
 #endif
+    if (aggrDeadlineReached)
+      break;
   }
 
   // free memory

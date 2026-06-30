@@ -18097,15 +18097,25 @@ int CbcModel::doOneNode(CbcModel *baseModel, CbcNode *&node,
 
     // Node-level bound propagation: propagate bound changes from
     // branching to detect infeasibility or fix additional variables.
-    if (nodeBoundProp_ && feasible) {
+    if (nodeBoundProp_ && feasible && !maximumSecondsReached()) {
       int depth = node->depth();
       if (depth >= nodeBoundPropMinDepth_
         && depth <= nodeBoundPropMaxDepth_
         && (depth % nodeBoundPropDepthInterval_) == 0) {
+        // Pass the remaining global time budget so bound propagation stops
+        // when the solver's time limit is reached rather than running
+        // indefinitely (the previous 1.0e100 sentinel was never triggered
+        // because startTime=0.0 makes tNow-startTime ≈ Unix timestamp >> 1e100).
+        double bpTimeLimit = 1.0e100;
+        double bpStartTime = 0.0;
+        if (dblParam_[CbcMaximumSeconds] < 1.0e8) {
+          bpTimeLimit = std::max(dblParam_[CbcMaximumSeconds] - getCurrentSeconds(), 0.0);
+          bpStartTime = CoinGetTimeOfDay();
+        }
         CbcBoundPropagation bp;
         feasible = bp.run(solver_, NULL, 0,
-          CbcBoundPropagation::Fixpoint, 0,
-          1.0e100, 0.0);
+            CbcBoundPropagation::Fixpoint, 0,
+            bpTimeLimit, bpStartTime);
       }
     }
 

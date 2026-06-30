@@ -17,6 +17,7 @@
 #include "CbcHeuristicDive.hpp"
 #include "CoinBoundPropagation.hpp"
 #include "ClpAbortHandler.hpp"
+#include <cstdlib>
 #include <vector>
 
 //#define DIVE_FIX_BINARY_VARIABLES
@@ -514,6 +515,10 @@ int CbcHeuristicDive::solution(double &solutionValue, int &numberNodes,
   int numberReducedCostFixed = 0;
   int totalBoundFixed = 0;    // cumulative vars fixed at bounds across all iterations
   int totalFractionalFixed = 0; // cumulative fractional vars rounded
+  // BP telemetry: count calls and measure aggregate time across this dive invocation
+  int totalBPCalls = 0;
+  int totalBPFixings = 0;
+  double totalBPTime = 0.0;
 
   // --- Guided objective setup ---
   std::vector<double> savedObjective;
@@ -971,7 +976,8 @@ int CbcHeuristicDive::solution(double &solutionValue, int &numberNodes,
     int saveModelOptions = model_->specialOptions();
 
     // --- Bound propagation: detect infeasibility cheaply and get free fixings ---
-    {
+    // Skip if time budget already exhausted.
+    if (CoinGetTimeOfDay() - time1 <= effectiveMaxTime && !model_->maximumSecondsReached()) {
       const CoinPackedMatrix *matByRow = solver->getMatrixByRow();
       if (matByRow) {
         const int nCols = solver->getNumCols();
@@ -982,9 +988,27 @@ int CbcHeuristicDive::solution(double &solutionValue, int &numberNodes,
         double pTol = primalTolerance;
         double inf = solver->getInfinity();
 
+        double bpT0 = CoinGetTimeOfDay();
         CoinBoundPropagation bt(nCols, colType,
           lower, upper, matByRow, rowSense, rowRHS, rowRange,
           pTol, inf);
+        double bpDt = CoinGetTimeOfDay() - bpT0;
+        totalBPCalls++;
+        totalBPTime += bpDt;
+
+        // When MIPSTER_BP_DUMP_DIR is set, dump unusually slow BP calls (>50ms)
+        // to an LP file for offline study.
+        if (bpDt > 0.05) {
+          const char *dumpDir = std::getenv("MIPSTER_BP_DUMP_DIR");
+          if (dumpDir) {
+            static int dumpCount = 0;
+            char path[512];
+            snprintf(path, sizeof(path), "%s/dive_bp_slow_%04d.lp", dumpDir, ++dumpCount);
+            solver->writeLp(path, "");
+            fprintf(stderr, "[DIVE_BP_SLOW] iter=%d dt=%.4fs rows=%d cols=%d dumped to %s\n",
+              iteration, bpDt, solver->getNumRows(), nCols, path);
+          }
+        }
 
         if (bt.isInfeasible()) {
           // Infeasibility detected without LP — skip the expensive resolve
@@ -997,6 +1021,7 @@ int CbcHeuristicDive::solution(double &solutionValue, int &numberNodes,
 
         // Apply free fixings from propagation
         const auto &bounds = bt.updatedBounds();
+        totalBPFixings += static_cast<int>(bounds.size());
         for (const auto &p : bounds) {
           int col = static_cast<int>(p.first);
           solver->setColLower(col, p.second.first);
@@ -1409,10 +1434,11 @@ int CbcHeuristicDive::solution(double &solutionValue, int &numberNodes,
     lastReasonToStop_ = reasonToStop;
 
     if (model_->messageHandler()->logLevel() >= 3)
-      printf("DIVE_STATS %s %d %d %d %d %d %d %.4f\n",
+      printf("DIVE_STATS %s %d %d %d %d %d %d %.4f bp_calls=%d bp_fixings=%d bp_time=%.4f\n",
         heuristicName_.c_str(), returnCode > 0 ? 1 : 0, reasonToStop,
         iteration, totalFractionalFixed, totalBoundFixed,
-        numberSimplexIterations, elapsed);
+        numberSimplexIterations, elapsed,
+        totalBPCalls, totalBPFixings, totalBPTime);
   }
 
 #if DIVE_PRINT

@@ -4805,15 +4805,6 @@ int CbcSolver::preprocess(
   babModel_->setOriginalColumns(process.originalColumns(),
     truncateColumns);
   babModel_->initialSolve();
-#if CBC_USE_INITIAL_TIME == 2
-  // time starts from here?
-  time1Elapsed = CoinGetTimeOfDay();
-  time1 = CoinCpuTime();
-  babModel_->setDblParam(CbcModel::CbcStartSeconds,
-    CoinGetTimeOfDay());
-  // babModel_->setMaximumSeconds(timeLeft - (CoinCpuTime() -
-  // time2));
-#endif
 
   // Restore process handler to model's handler before deleting preprocHandler,
   // because process.postProcess() (called later in run()) will call handler_->message().
@@ -6724,15 +6715,6 @@ int CbcSolver::run(std::deque< std::string > inputQueue,
   saveInputQueue_ = inputQueue;
   // copy if we are reading from option file
   std::deque< std::string > partInputQueue;
-  // Meaning 0 - start at very beginning
-  // 1 start at beginning of preprocessing
-  // 2 start at beginning of branch and bound
-#ifndef CBC_USE_INITIAL_TIME
-#define CBC_USE_INITIAL_TIME 1
-#endif
-#if CBC_USE_INITIAL_TIME == 0
-  model_.setDblParam(CbcModel::CbcStartSeconds, CoinGetTimeOfDay());
-#endif
   babModel_ = NULL;
   returnMode_ = 1;
   // statusUserFunction_ and numberUserFunctions_ are class members
@@ -7487,9 +7469,21 @@ int CbcSolver::run(std::deque< std::string > inputQueue,
       int status;
       numberGoodCommands++;
       if (cbcParamCode == CbcParam::BAB && goodModel) {
-#if CBC_USE_INITIAL_TIME == 1
+        // Clock starts here — CbcStartSeconds is the origin for all time-limit
+        // checks (getCurrentSeconds(), maximumSecondsReached()).  Setting it at
+        // the BAB command includes LP solve + preprocessing + B&B in the budget,
+        // which is the correct semantics for a user-facing -sec N limit.
         model_.setDblParam(CbcModel::CbcStartSeconds, CoinGetTimeOfDay());
-#endif
+        // Early propagation of stopping criteria to model_ before the initial
+        // LP solve.  synchronizeModel() (called later in case CbcParam::BAB)
+        // is too late: solveInitialLp() reads model_.CbcMaximumSeconds and
+        // only applies applyClpTimeLimit() when it is < 1e8.  Without this
+        // early sync the initial LP runs unconstrained regardless of -sec.
+        {
+          double tl = parameters[CbcParam::TIMELIMIT]->dblVal();
+          if (tl < model_.getDblParam(CbcModel::CbcMaximumSeconds))
+            model_.setDblParam(CbcModel::CbcMaximumSeconds, tl);
+        }
 
         biLinearProblem = false;
         // check if any integers
@@ -9782,10 +9776,6 @@ int CbcSolver::run(std::deque< std::string > inputQueue,
           // HEURSTART
           // Do heuristics if asked for
           if (parameters[CbcParam::DOHEURISTIC]->modeVal()) {
-#if CBC_USE_INITIAL_TIME == 1
-            model_.setDblParam(CbcModel::CbcStartSeconds,
-              CoinGetTimeOfDay());
-#endif
             int vubMode = parameters[CbcParam::VUBTRY]->intVal();
             if (vubMode != -1) {
               // look at vubs

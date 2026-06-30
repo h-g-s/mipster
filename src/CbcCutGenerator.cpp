@@ -362,10 +362,16 @@ bool CbcCutGenerator::generateCuts(OsiCuts &cs, int fullScan, OsiSolverInterface
       //void * saveData = solver->getApplicationData();
       //solver->setApplicationData(model_);
       // Propagate remaining wall-clock time so cut generators can self-limit.
+      // Use a negative sentinel (-1.0) when the budget is already exhausted so
+      // generators can distinguish "no limit set" (0.0) from "time is up" (<0).
       {
         double remaining = model_->getMaximumSeconds() - model_->getCurrentSeconds();
-        if (remaining > 0.0 && remaining <5.0e7)
+        if (remaining > 0.0 && remaining < 5.0e7)
           generator_->setMaxSeconds(remaining);
+        else if (remaining <= 0.0 && model_->getMaximumSeconds() < 5.0e7)
+          generator_->setMaxSeconds(-1.0); // budget exhausted
+        else
+          generator_->setMaxSeconds(0.0); // no active limit
       }
       generator_->generateCuts(*solver, cs, info);
       //solver->setApplicationData(saveData);

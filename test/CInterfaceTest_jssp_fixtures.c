@@ -54,12 +54,12 @@ static Cbc_Model *jssp_builder(void *userdata)
  * time limit is a wall-clock fallback (machine-dependent — tight values
  * cause flaky failures on slow CI runners or sanitizer builds). */
 static const JsspTestCase jssp_test_cases[] = {
-  {"jssp_ft06",    55,  500000, 600},  /* Fisher & Thompson 6x6 */
-  {"jssp_ft10",   930,  500000, 600},  /* Fisher & Thompson 10x10 */
-  {"jssp_la01",   666,  500000, 600},  /* Lawrence 10x5 */
-  {"jssp_la06",   926,  500000, 600},  /* Lawrence 15x5 */
-  {"jssp_la11",  1222,  500000, 600},  /* Lawrence 20x5 */
-  {"jssp_orb01", 1059,  500000, 600},  /* Applegate & Cook 10x10 */
+  {"jssp_ft06",    55,  100000, 120},  /* Fisher & Thompson 6x6 */
+  {"jssp_ft10",   930,  100000, 120},  /* Fisher & Thompson 10x10 */
+  {"jssp_la01",   666,  100000, 120},  /* Lawrence 10x5 */
+  {"jssp_la06",   926,  100000, 120},  /* Lawrence 15x5 */
+  {"jssp_la11",  1222,  100000, 120},  /* Lawrence 20x5 */
+  {"jssp_orb01", 1059,  100000, 120},  /* Applegate & Cook 10x10 */
 };
 
 static const int NUM_TESTS = sizeof(jssp_test_cases) / sizeof(jssp_test_cases[0]);
@@ -200,11 +200,24 @@ static int test_jssp(const char *fixture_dir, const JsspTestCase *tc)
 int main(int argc, char **argv)
 {
   if (argc < 2) {
-    fprintf(stderr, "Usage: %s <fixture-dir>\n", argv[0]);
+    fprintf(stderr, "Usage: %s <fixture-dir> [fixture-name]\n", argv[0]);
     return 1;
   }
 
   const char *fixture_dir = argv[1];
+  const char *filter = (argc >= 3) ? argv[2] : NULL;
+
+  /* Single-fixture mode: run only the named fixture and exit. */
+  if (filter) {
+    for (int i = 0; i < NUM_TESTS; i++) {
+      if (strcmp(jssp_test_cases[i].name, filter) == 0) {
+        int pass = test_jssp(fixture_dir, &jssp_test_cases[i]);
+        return pass ? 0 : 1;
+      }
+    }
+    fprintf(stderr, "Unknown fixture: %s\n", filter);
+    return 2;
+  }
 
   printf("=== Job Shop Scheduling Tests ===\n");
   int passed = 0, failed = 0;

@@ -52,17 +52,16 @@ typedef struct {
   int         timeout_sec;   /* wall-clock fallback (loose) */
 } UpmsTestCase;
 
-/* Node limits are generous: the point is to exercise branching, not to
-   guarantee a proof of optimality.  The time limit is a safety net for
-   sanitizer builds or very slow CI runners. */
+/* Node limits are the primary deterministic stop (50k keeps CI fast).
+   Time limit is a loose safety net for sanitizer / slow CI runners. */
 static const UpmsTestCase upms_test_cases[] = {
   /* name                        cert_opt  nodes   sec */
-  {"upms_n8_m2_int_cmax_s42",   55.0,    500000, 300}, /* 8j 2m int  Cmax */
-  {"upms_n8_m3_int_wct_s42",   273.0,    500000, 300}, /* 8j 3m int  WCT  */
-  {"upms_n9_m3_int_cmax_s137",  57.0,    500000, 300}, /* 9j 3m int  Cmax */
-  {"upms_n8_m3_frac_cmax_s42",  24.5,    500000, 300}, /* 8j 3m frac Cmax */
-  {"upms_n9_m2_lgset_cmax_s137",87.0,    500000, 300}, /* 9j 2m lgst Cmax */
-  {"upms_n7_m3_int_wct_s137",  202.0,    500000, 300}, /* 7j 3m int  WCT  */
+  {"upms_n8_m2_int_cmax_s42",   55.0,     50000, 120}, /* 8j 2m int  Cmax */
+  {"upms_n8_m3_int_wct_s42",   273.0,     50000, 120}, /* 8j 3m int  WCT  */
+  {"upms_n9_m3_int_cmax_s137",  57.0,     50000, 120}, /* 9j 3m int  Cmax */
+  {"upms_n8_m3_frac_cmax_s42",  24.5,     50000, 120}, /* 8j 3m frac Cmax */
+  {"upms_n9_m2_lgset_cmax_s137",87.0,     50000, 120}, /* 9j 2m lgst Cmax */
+  {"upms_n7_m3_int_wct_s137",  202.0,     50000, 120}, /* 7j 3m int  WCT  */
 };
 
 static const int NUM_TESTS = sizeof(upms_test_cases) / sizeof(upms_test_cases[0]);
@@ -194,10 +193,11 @@ static int test_upms(const char *fixture_dir, const UpmsTestCase *tc)
 int main(int argc, char **argv)
 {
   if (argc < 2) {
-    fprintf(stderr, "Usage: %s <fixture-dir>\n", argv[0]);
+    fprintf(stderr, "Usage: %s <fixture-dir> [fixture-name]\n", argv[0]);
     return 1;
   }
   const char *fixture_dir = argv[1];
+  const char *only_fixture = (argc >= 3) ? argv[2] : NULL;
 
   printf("=== UPMSP-ST Tests (Unrelated Parallel Machine Scheduling) ===\n");
 
@@ -205,6 +205,8 @@ int main(int argc, char **argv)
   double t_total = perf_wall_time();
 
   for (int i = 0; i < NUM_TESTS; i++) {
+    if (only_fixture && strcmp(upms_test_cases[i].name, only_fixture) != 0)
+      continue;
     if (test_upms(fixture_dir, &upms_test_cases[i]))
       passed++;
     else
@@ -213,6 +215,6 @@ int main(int argc, char **argv)
 
   double elapsed = perf_wall_time() - t_total;
   printf("\n%d/%d tests passed  (%.1fs total)\n",
-         passed, NUM_TESTS, elapsed);
+         passed, failed + passed, elapsed);
   return (failed == 0) ? 0 : 1;
 }

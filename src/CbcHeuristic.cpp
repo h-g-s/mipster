@@ -818,10 +818,16 @@ int CbcHeuristic::smallBranchAndBound(OsiSolverInterface *solver, int numberNode
   model_->setSpecialOptions(saveModelOptions | 2048);
   // Bound propagation: singleton tightening + knapsack bound propagation.
   // Runs before the LP solve — purely combinatorial, no basis needed.
+  // Use remaining time (not total limit) so BP cannot outlast the global budget.
   {
     CbcBoundPropagation bp;
     const double startTime = CoinGetTimeOfDay();
-    const double timeLimit = model_->getMaximumSeconds();
+    const double remaining = model_->getMaximumSeconds() - model_->getCurrentSeconds();
+    if (remaining <= 0.0) {
+      model_->setSpecialOptions(saveModelOptions);
+      return 0; // time already exhausted
+    }
+    const double timeLimit = remaining;
 #ifdef RINS_CLOSE_DEBUG
     int nFixedPreBP = 0;
     {

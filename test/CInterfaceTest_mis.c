@@ -145,11 +145,25 @@ static int test_mis(const char *fixture_dir, const MisTestCase *tc,
 int main(int argc, char **argv)
 {
   if (argc < 2) {
-    fprintf(stderr, "Usage: %s <fixture-dir>\n", argv[0]);
+    fprintf(stderr, "Usage: %s <fixture-dir> [fixture-name]\n", argv[0]);
     return 1;
   }
 
   const char *fixture_dir = argv[1];
+  const char *filter = (argc >= 3) ? argv[2] : NULL;
+
+  /* Single-fixture mode: run only the named fixture and exit. */
+  if (filter) {
+    for (int i = 0; i < NUM_TESTS; i++) {
+      if (strcmp(mis_test_cases[i].name, filter) == 0) {
+        MipPerfRecord perf;
+        int pass = test_mis(fixture_dir, &mis_test_cases[i], &perf);
+        return pass ? 0 : 1;
+      }
+    }
+    fprintf(stderr, "Unknown fixture: %s\n", filter);
+    return 2;
+  }
 
   printf("=== Maximum Independent Set Tests ===\n");
   int passed = 0, failed = 0;

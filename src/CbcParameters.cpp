@@ -133,7 +133,7 @@ void CbcParameters::init(int strategy){
   clique_.minViolation_ = 0.1;
 
   flow_.mode_ = CbcParameters::CGIfMove;
-  pathAggr_.mode_ = CbcParameters::CGIfMove;
+  pathAggr_.mode_ = CbcParameters::CGRoot;
   flow_.proto_ = 0;
 
   gomory_.mode_ = CbcParameters::CGIfMove;
@@ -923,7 +923,7 @@ void CbcParameters::setDefaults(int strategy) {
      parameters_[CbcParam::LATWOMIRCUTS]->setDefault("off");
      parameters_[CbcParam::MIRCUTS]->setDefault("ifmove");
      parameters_[CbcParam::ODDWHEELCUTS]->setDefault("off");
-     parameters_[CbcParam::PATHAGGRCUTS]->setDefault("ifmove");
+     parameters_[CbcParam::PATHAGGRCUTS]->setDefault("root");
      parameters_[CbcParam::PROBINGCUTS]->setDefault("ifmove");
      parameters_[CbcParam::REDSPLITCUTS]->setDefault("off");
      parameters_[CbcParam::REDSPLIT2CUTS]->setDefault("ifmove");

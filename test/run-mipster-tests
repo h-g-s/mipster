@@ -128,11 +128,30 @@ TESTS=(
   CInterfaceTest_setpacking
   CInterfaceTest_setpartitioning
   CInterfaceTest_bpc
-  CInterfaceTest_mis
-  CInterfaceTest_jssp_fixtures
+  CInterfaceTest_mis_n15_sd42_random_uniform
+  CInterfaceTest_mis_n20_sd42_geometric_unit
+  CInterfaceTest_mis_n16_sd137_grid_diverse
+  CInterfaceTest_mis_n18_sd42_k_partite_uniform
+  CInterfaceTest_mis_n20_sd137_tree_uniform
+  CInterfaceTest_mis_n30_sd42_random_uniform
+  CInterfaceTest_mis_n35_sd137_geometric_diverse
+  CInterfaceTest_mis_n36_sd42_grid_unit
+  CInterfaceTest_mis_n40_sd137_planar_uniform
+  CInterfaceTest_mis_n30_sd42_cycle_uniform
+  CInterfaceTest_jssp_ft06
+  CInterfaceTest_jssp_ft10
+  CInterfaceTest_jssp_la01
+  CInterfaceTest_jssp_la06
+  CInterfaceTest_jssp_la11
+  CInterfaceTest_jssp_orb01
   CInterfaceTest_steiner
   CInterfaceTest_fcnf_fixtures
-  CInterfaceTest_upms
+  CInterfaceTest_upms_n8_m2_int_cmax_s42
+  CInterfaceTest_upms_n8_m3_int_wct_s42
+  CInterfaceTest_upms_n9_m3_int_cmax_s137
+  CInterfaceTest_upms_n8_m3_frac_cmax_s42
+  CInterfaceTest_upms_n9_m2_lgset_cmax_s137
+  CInterfaceTest_upms_n7_m3_int_wct_s137
   CInterfaceTest_gap
   CInterfaceTest_leo1
   CInterfaceTest_parity
@@ -147,8 +166,8 @@ TEST_RESULTS=()   # entries: "TestName:elapsed_ms"
 # ── Helpers ──────────────────────────────────────────────────────────────────
 # Width of the counter field (e.g. 2 for totals up to 99)
 W=${#TOTAL}
-# Fixed width for the test name column
-NAME_COL=40
+# Fixed width for the test name column (wide enough for per-fixture names)
+NAME_COL=48
 
 find_bin() {
   local name="$1"
@@ -174,19 +193,92 @@ FIXTURE_TESTS=(
   CInterfaceTest_setpacking
   CInterfaceTest_setpartitioning
   CInterfaceTest_bpc
-  CInterfaceTest_mis
-  CInterfaceTest_jssp_fixtures
+  CInterfaceTest_mis_n15_sd42_random_uniform
+  CInterfaceTest_mis_n20_sd42_geometric_unit
+  CInterfaceTest_mis_n16_sd137_grid_diverse
+  CInterfaceTest_mis_n18_sd42_k_partite_uniform
+  CInterfaceTest_mis_n20_sd137_tree_uniform
+  CInterfaceTest_mis_n30_sd42_random_uniform
+  CInterfaceTest_mis_n35_sd137_geometric_diverse
+  CInterfaceTest_mis_n36_sd42_grid_unit
+  CInterfaceTest_mis_n40_sd137_planar_uniform
+  CInterfaceTest_mis_n30_sd42_cycle_uniform
+  CInterfaceTest_jssp_ft06
+  CInterfaceTest_jssp_ft10
+  CInterfaceTest_jssp_la01
+  CInterfaceTest_jssp_la06
+  CInterfaceTest_jssp_la11
+  CInterfaceTest_jssp_orb01
   CInterfaceTest_steiner
   CInterfaceTest_fcnf_fixtures
-  CInterfaceTest_upms
+  CInterfaceTest_upms_n8_m2_int_cmax_s42
+  CInterfaceTest_upms_n8_m3_int_wct_s42
+  CInterfaceTest_upms_n9_m3_int_cmax_s137
+  CInterfaceTest_upms_n8_m3_frac_cmax_s42
+  CInterfaceTest_upms_n9_m2_lgset_cmax_s137
+  CInterfaceTest_upms_n7_m3_int_wct_s137
   CInterfaceTest_gap
   CInterfaceTest_parity
+)
+
+# Per-fixture tests: map display name → actual binary name
+declare -A TEST_BIN_MAP=(
+  ["CInterfaceTest_mis_n15_sd42_random_uniform"]="CInterfaceTest_mis"
+  ["CInterfaceTest_mis_n20_sd42_geometric_unit"]="CInterfaceTest_mis"
+  ["CInterfaceTest_mis_n16_sd137_grid_diverse"]="CInterfaceTest_mis"
+  ["CInterfaceTest_mis_n18_sd42_k_partite_uniform"]="CInterfaceTest_mis"
+  ["CInterfaceTest_mis_n20_sd137_tree_uniform"]="CInterfaceTest_mis"
+  ["CInterfaceTest_mis_n30_sd42_random_uniform"]="CInterfaceTest_mis"
+  ["CInterfaceTest_mis_n35_sd137_geometric_diverse"]="CInterfaceTest_mis"
+  ["CInterfaceTest_mis_n36_sd42_grid_unit"]="CInterfaceTest_mis"
+  ["CInterfaceTest_mis_n40_sd137_planar_uniform"]="CInterfaceTest_mis"
+  ["CInterfaceTest_mis_n30_sd42_cycle_uniform"]="CInterfaceTest_mis"
+  ["CInterfaceTest_jssp_ft06"]="CInterfaceTest_jssp_fixtures"
+  ["CInterfaceTest_jssp_ft10"]="CInterfaceTest_jssp_fixtures"
+  ["CInterfaceTest_jssp_la01"]="CInterfaceTest_jssp_fixtures"
+  ["CInterfaceTest_jssp_la06"]="CInterfaceTest_jssp_fixtures"
+  ["CInterfaceTest_jssp_la11"]="CInterfaceTest_jssp_fixtures"
+  ["CInterfaceTest_jssp_orb01"]="CInterfaceTest_jssp_fixtures"
+  ["CInterfaceTest_upms_n8_m2_int_cmax_s42"]="CInterfaceTest_upms"
+  ["CInterfaceTest_upms_n8_m3_int_wct_s42"]="CInterfaceTest_upms"
+  ["CInterfaceTest_upms_n9_m3_int_cmax_s137"]="CInterfaceTest_upms"
+  ["CInterfaceTest_upms_n8_m3_frac_cmax_s42"]="CInterfaceTest_upms"
+  ["CInterfaceTest_upms_n9_m2_lgset_cmax_s137"]="CInterfaceTest_upms"
+  ["CInterfaceTest_upms_n7_m3_int_wct_s137"]="CInterfaceTest_upms"
+)
+
+# Per-fixture tests: map display name → fixture name arg (passed after fixture dir)
+declare -A TEST_FIXTURE_ARG=(
+  ["CInterfaceTest_mis_n15_sd42_random_uniform"]="mis_n15_sd42_random_uniform"
+  ["CInterfaceTest_mis_n20_sd42_geometric_unit"]="mis_n20_sd42_geometric_unit"
+  ["CInterfaceTest_mis_n16_sd137_grid_diverse"]="mis_n16_sd137_grid_diverse"
+  ["CInterfaceTest_mis_n18_sd42_k_partite_uniform"]="mis_n18_sd42_k_partite_uniform"
+  ["CInterfaceTest_mis_n20_sd137_tree_uniform"]="mis_n20_sd137_tree_uniform"
+  ["CInterfaceTest_mis_n30_sd42_random_uniform"]="mis_n30_sd42_random_uniform"
+  ["CInterfaceTest_mis_n35_sd137_geometric_diverse"]="mis_n35_sd137_geometric_diverse"
+  ["CInterfaceTest_mis_n36_sd42_grid_unit"]="mis_n36_sd42_grid_unit"
+  ["CInterfaceTest_mis_n40_sd137_planar_uniform"]="mis_n40_sd137_planar_uniform"
+  ["CInterfaceTest_mis_n30_sd42_cycle_uniform"]="mis_n30_sd42_cycle_uniform"
+  ["CInterfaceTest_jssp_ft06"]="jssp_ft06"
+  ["CInterfaceTest_jssp_ft10"]="jssp_ft10"
+  ["CInterfaceTest_jssp_la01"]="jssp_la01"
+  ["CInterfaceTest_jssp_la06"]="jssp_la06"
+  ["CInterfaceTest_jssp_la11"]="jssp_la11"
+  ["CInterfaceTest_jssp_orb01"]="jssp_orb01"
+  ["CInterfaceTest_upms_n8_m2_int_cmax_s42"]="upms_n8_m2_int_cmax_s42"
+  ["CInterfaceTest_upms_n8_m3_int_wct_s42"]="upms_n8_m3_int_wct_s42"
+  ["CInterfaceTest_upms_n9_m3_int_cmax_s137"]="upms_n9_m3_int_cmax_s137"
+  ["CInterfaceTest_upms_n8_m3_frac_cmax_s42"]="upms_n8_m3_frac_cmax_s42"
+  ["CInterfaceTest_upms_n9_m2_lgset_cmax_s137"]="upms_n9_m2_lgset_cmax_s137"
+  ["CInterfaceTest_upms_n7_m3_int_wct_s137"]="upms_n7_m3_int_wct_s137"
 )
 
 # Phase 1: launch all tests in background
 for i in "${!TESTS[@]}"; do
   name="${TESTS[$i]}"
-  bin=$(find_bin "$name")
+  # Resolve actual binary name (may differ for per-fixture entries)
+  bin_name="${TEST_BIN_MAP[$name]:-$name}"
+  bin=$(find_bin "$bin_name")
   tmpfile=$(mktemp)
   _tmpfiles[$i]="$tmpfile"
   _bins[$i]="$bin"
@@ -201,8 +293,9 @@ for i in "${!TESTS[@]}"; do
       fi
     done
 
+    fixture_arg="${TEST_FIXTURE_ARG[$name]:-}"
     if [ "$needs_fixtures" -eq 1 ] && [ -n "$MIPSTER_FIXTURE_DIR" ]; then
-      "$bin" "$MIPSTER_FIXTURE_DIR" > "$tmpfile" 2>&1 &
+      "$bin" "$MIPSTER_FIXTURE_DIR" ${fixture_arg:+"$fixture_arg"} > "$tmpfile" 2>&1 &
     else
       "$bin" > "$tmpfile" 2>&1 &
     fi
