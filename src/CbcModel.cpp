@@ -18103,16 +18103,6 @@ int CbcModel::doOneNode(CbcModel *baseModel, CbcNode *&node,
         && depth <= nodeBoundPropMaxDepth_
         && (depth % nodeBoundPropDepthInterval_) == 0) {
         CbcBoundPropagation bp;
-        // Disable FBBT for continuous variables at tree nodes.  Continuous
-        // FBBT computes bounds via min-activity accumulation (sum of a_i*lb_i
-        // terms), which is subject to FP rounding.  On platforms with slightly
-        // different FP semantics (e.g. arm64), the computed bound can land just
-        // below the true mathematical bound.  Cut generators (e.g. MIR) then
-        // read these over-tightened bounds from the solver and incorporate them
-        // in cut RHS calculations, producing cuts that exclude the true optimal.
-        // Disabling continuous FBBT here keeps the valuable integer/binary
-        // fixing propagation while avoiding the precision risk for cut generation.
-        bp.setNonBinaryFBBT(false);
         // Pass remaining wall-clock budget so BP cannot outlast the global
         // time limit.  (startTime=CoinGetTimeOfDay(); limit=remaining seconds)
         const double bpRemaining = std::max(getMaximumSeconds() - getCurrentSeconds(), 1.0);

@@ -47,11 +47,18 @@ build_debug_variant() {
   local cxxflags ldflags has_asan
   if echo 'int main(){}' | g++ -fsanitize=address -o /tmp/asan_test_$$ -x c++ - 2>/dev/null; then
     rm -f /tmp/asan_test_$$
-    cxxflags="-O1 -g -fno-omit-frame-pointer -fsanitize=address"
+    # -ffp-contract=off: on aarch64, FMADD is in the base ISA and compilers
+    # default to -ffp-contract=fast, which fuses multiply-add operations.  This
+    # changes FP accumulation results in FBBT min-activity computations, causing
+    # bounds to land slightly below their true mathematical values.  Cut
+    # generators (e.g. MIR) reading those bounds generate invalid cuts that
+    # exclude the true optimal.  The opt builds already carry this flag;
+    # the debug+ASan builds need it too for identical numeric behaviour.
+    cxxflags="-O1 -g -fno-omit-frame-pointer -ffp-contract=off -fsanitize=address"
     ldflags="-fsanitize=address -static-libgcc -static-libstdc++ -Wl,-Bstatic,-lgfortran,-Bdynamic"
     has_asan=true
   else
-    cxxflags="-O1 -g -fno-omit-frame-pointer"
+    cxxflags="-O1 -g -fno-omit-frame-pointer -ffp-contract=off"
     ldflags="-static-libgcc -static-libstdc++ -Wl,-Bstatic,-lgfortran,-Bdynamic"
     has_asan=false
     echo "    Note: ASan not available in this environment; using debug-only build"
