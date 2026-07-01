@@ -11867,6 +11867,15 @@ int CbcModel::resolve(CbcNodeInfo *parent, int whereFrom, double *saveSolution,
           printf("bad row %d %.10g <= %.10g <= %.10g\n",
             i, rowLower[i], sum, rowUpper[i]);
       }
+      // Check column bounds against reference solution — catches FBBT bounds
+      // that are tighter than the true mathematical bound (the cut-row check
+      // above only catches invalid cut rows, not over-tight column bounds).
+      for (int i = 0; i < numberColumns; i++) {
+        const double xi = solution[i];
+        if (xi < lower[i] - 1.0e-8 || xi > upper[i] + 1.0e-8)
+          printf("bad col bound %d  lb=%.10g  x*=%.10g  ub=%.10g  isInt=%d\n",
+            i, lower[i], xi, upper[i], temp->isInteger(i) ? 1 : 0);
+      }
       for (int i = 0; i < numberColumns; i++) {
         if (temp->isInteger(i)) {
           double value = floor(solution[i] + 0.5);

@@ -91,10 +91,15 @@ bool CbcBoundPropagation::run(OsiSolverInterface *solver,
   // called from the propagation loop (call before updating curLB/curUB).
   auto checkFixing = [&](int col, double newLB, double newUB,
                          const char *phase) {
-    if (!optSol || !solver->isInteger(col))
+    if (!optSol)
       return;
     const double sv = optSol[col];
-    if (newLB > sv + 0.5 || newUB < sv - 0.5) {
+    const bool isInt = solver->isInteger(col);
+    // For integers: use 0.5 tolerance (any integer rounding is wrong).
+    // For continuous: use 1e-8 tolerance (catches FBBT bounds tighter than
+    //   the true mathematical bound, which exclude the reference solution).
+    const double tol = isInt ? 0.5 : 1.0e-8;
+    if (newLB > sv + tol || newUB < sv - tol) {
       const std::string name = solver->getColName(col);
       const char ct = colType ? colType[col] : char(-1);
       const char *ctName = (ct == 1) ? "binary"
