@@ -145,6 +145,22 @@ static RowScanInfo scanRow(
   info.nUnbounded = 0;
   info.unboundedK = -1;
 
+  // Kahan compensated summation for minAct: prevents FP accumulation errors
+  // from making minAct overshoot its true mathematical value (which would
+  // produce over-tight FBBT bounds).  Without this, scalar sequential FP
+  // summation on arm64 at -O1 can compute minAct slightly above the true
+  // value, causing newUB to fall below the reference optimal — an invalid
+  // bound that triggers wrong-optimal (the LP with this bound excludes the
+  // true optimal solution even though no individual cut row is invalid).
+  double minActComp = 0.0;
+  // Helper: add val into info.minAct using Kahan compensation.
+  auto minActAdd = [&](double val) {
+    double y = val - minActComp;
+    double t = info.minAct + y;
+    minActComp = (t - info.minAct) - y;
+    info.minAct = t;
+  };
+
   // Binary check state — mirrors rowNeedsProcessing but without early exit.
   double binaryRhs = multiplier * adjustedRhs;
   double maxCoef = 0.0;
@@ -186,7 +202,7 @@ static RowScanInfo scanRow(
           else
             info.fbbtUseful = false; // nUnbounded >= 2 → skip FBBT
         } else {
-          info.minAct += c * lb;
+          minActAdd(c * lb);
           binaryRhs -= c * lb; // discount for binary check
         }
       } else { // c < 0
@@ -197,7 +213,7 @@ static RowScanInfo scanRow(
           else
             info.fbbtUseful = false;
         } else {
-          info.minAct += c * ub;
+          minActAdd(c * ub);
           binaryRhs -= c * ub; // discount for binary check
         }
       }
@@ -207,9 +223,9 @@ static RowScanInfo scanRow(
     // Binary variable: include in FBBT min activity (tightening handled by knapsack).
     // c > 0: lb = 0 (free binary) → contributes 0; c < 0: ub = 1 → contributes c.
     if (c > 0.0)
-      info.minAct += c * lb;
+      minActAdd(c * lb);
     else
-      info.minAct += c * ub;
+      minActAdd(c * ub);
 
     // Binary check (mirrors rowNeedsProcessing without early exit).
     if (c >= 0.0) {

@@ -38,14 +38,16 @@ mkdir -p "${INSTALL_DIR}/bin" "${INSTALL_DIR}/include" "${INSTALL_DIR}/lib"
 #   ./configster --debug --sanitizer=asan
 build_debug_variant() {
   local build_dir="${BUILD_DIR}-dbg"
-  # -ffp-contract=off: on aarch64, FMADD is in the base ISA and compilers
-  # default to -ffp-contract=fast, which fuses multiply-add operations.  This
-  # changes FP accumulation results in FBBT min-activity computations, causing
-  # bounds to land slightly below their true mathematical values.  Cut
-  # generators (e.g. MIR) reading those bounds generate invalid cuts that
-  # exclude the true optimal.  The opt builds already carry this flag;
-  # the debug builds need it too for identical numeric behaviour.
-  local cxxflags="-O1 -g -fno-omit-frame-pointer -ffp-contract=off"
+  # -ffp-contract=off: prevents FMA fusion (FMADD is in the base AArch64 ISA).
+  # -fvectorize: the FBBT min-activity inner loop (sum of a_i*lb_i terms) uses
+  # scalar sequential FP accumulation at -O1, giving slightly different rounding
+  # than the NEON-vectorized -O3 opt build.  On arm64 the scalar path can
+  # compute minAct slightly above the true value, tightening FBBT bounds below
+  # the true mathematical bound.  Cut generators (e.g. MIR) then read those
+  # over-tight bounds and generate invalid cuts that exclude the true optimal.
+  # Enabling vectorisation here matches the opt build's NEON accumulation order
+  # and rounding behaviour, making both builds numerically consistent.
+  local cxxflags="-O1 -g -fno-omit-frame-pointer -ffp-contract=off -fvectorize"
 
   echo ""
   echo "==> Building debug variant  CXXFLAGS='${cxxflags}'"
