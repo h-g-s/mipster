@@ -300,6 +300,10 @@ bool CbcBoundPropagation::run(OsiSolverInterface *solver,
     }
 
     // Initialise the row min-activity cache from the current bounds (curLB/curUB).
+    // Use Kahan compensated summation to match the precision of scanRow().
+    // Without this, plain sequential FP accumulation on arm64 at -O1 can compute
+    // minAct slightly above the true value, causing the same over-tight FBBT
+    // bounds as in scanRow (the cache bypasses scanRow from round 2 onwards).
     rowCachedMinAct.assign(static_cast< size_t >(nRows), 0.0);
     rowCachedNUnbLB.assign(static_cast< size_t >(nRows), 0);
     {
@@ -307,23 +311,29 @@ bool CbcBoundPropagation::run(OsiSolverInterface *solver,
       for (int r = 0; r < nRows; ++r) {
         const CoinBigIndex rs = matStart[r];
         const int len = matLen[r];
-        double minA = 0.0;
+        double minA = 0.0, minAComp = 0.0;
         int nUnbLB = 0;
         for (int k = 0; k < len; ++k) {
           const int j = matIdxs[rs + k];
           const double a = matCoefs[rs + k];
           const double lb = curLB[j], ub = curUB[j];
+          double term = 0.0;
           if (a > 0.0) {
             if (lb <= -infinity)
               ++nUnbLB;
             else
-              minA += a * lb;
+              term = a * lb;
           } else if (a < 0.0) {
             if (ub >= infinity)
               ++nUnbLB;
             else
-              minA += a * ub;
+              term = a * ub;
           }
+          // Kahan compensated addition
+          const double y = term - minAComp;
+          const double t = minA + y;
+          minAComp = (t - minA) - y;
+          minA = t;
         }
         rowCachedMinAct[r] = minA;
         rowCachedNUnbLB[r] = nUnbLB;
