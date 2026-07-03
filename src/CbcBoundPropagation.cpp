@@ -130,10 +130,12 @@ bool CbcBoundPropagation::run(OsiSolverInterface *solver,
       stopReason_ = InfeasibleDetected;
       timeUsed_ = (CoinGetTimeOfDay()) - t0;
 
-      if (logLevel >= 1)
+      if (logLevel >= 1) {
         printf("  Bound propagation: INFEASIBLE (singleton tightening), "
                "%.3f s.\n",
           timeUsed_);
+        fflush(stdout);
+      }
 
       return false;
     }
@@ -155,18 +157,22 @@ bool CbcBoundPropagation::run(OsiSolverInterface *solver,
         checkFixing(j, lbVec[j], ubVec[j], "singleton");
     }
 
-    if (logLevel >= 2 && nTightened > 0)
+    if (logLevel >= 2 && nTightened > 0) {
       printf("  Bound propagation (singletons): %d tightened, %d fixed.\n",
         nSingletonTightened_, nSingletonFixed_);
+      fflush(stdout);
+    }
   }
 
   if (level == Singletons) {
     stopReason_ = ReachedFixpoint;
     timeUsed_ = (CoinGetTimeOfDay()) - t0;
 
-    if (logLevel >= 1)
+    if (logLevel >= 1) {
       printf("  Bound propagation fixed %d vars in %.3f s.\n",
         nSingletonFixed_, timeUsed_);
+      fflush(stdout);
+    }
 
     return true;
   }
@@ -358,11 +364,13 @@ bool CbcBoundPropagation::run(OsiSolverInterface *solver,
       stopReason_ = HitTimeLimit;
       timeUsed_ = tNow - t0;
 
-      if (logLevel >= 1)
+      if (logLevel >= 1) {
         printf("  Bound propagation: fixed %d (%d singleton + %d propagation, "
                "%d round(s), TIME LIMIT), %.3f s.\n",
           nSingletonFixed_ + nBoundPropFixed_, nSingletonFixed_, nBoundPropFixed_,
           nRoundsRun_, timeUsed_);
+        fflush(stdout);
+      }
 
       return true;
     }
@@ -376,6 +384,17 @@ bool CbcBoundPropagation::run(OsiSolverInterface *solver,
     const int *cachedNUnbLB = actCacheBuilt ? rowCachedNUnbLB.data() : nullptr;
     const bool *hasBinaryRow =
       dirtyInfraBuilt ? reinterpret_cast< const bool * >(rowHasBinaryBP.data()) : nullptr;
+    // Heartbeat before the (potentially expensive, non-preemptible) scan
+    // below — this call has no internal time-limit check, so on a large or
+    // pathological instance it can run well past the deadline in a single
+    // shot. Printing+flushing here lets a killed run's log pinpoint whether
+    // it died mid-round (this line is the last one) or elsewhere.
+    if (logLevel >= 2) {
+      printf("  Bound propagation: round %d starting (nRows=%d nCols=%d "
+             "dirtyHint=%s), t=%.3fs\n",
+        round, nRows, nCols, dirtyHint ? "yes" : "no", tNow - startTime);
+      fflush(stdout);
+    }
     CoinBoundPropagation bt(nCols, colType,
       curLB.data(), curUB.data(),
       matByRow, rowSense, rhs, range,
@@ -416,6 +435,7 @@ bool CbcBoundPropagation::run(OsiSolverInterface *solver,
           printf("  Bound propagation: INFEASIBLE in round %d, %.3f s.\n",
             nRoundsRun_, timeUsed_);
         }
+        fflush(stdout);
       }
 
       return false;
@@ -433,10 +453,12 @@ bool CbcBoundPropagation::run(OsiSolverInterface *solver,
       stopReason_ = ReachedFixpoint;
       timeUsed_ = (CoinGetTimeOfDay()) - t0;
 
-      if (logLevel >= 2)
+      if (logLevel >= 2) {
         printf("  Bound propagation: fixpoint reached after %d "
                "round(s).\n",
           nRoundsRun_);
+        fflush(stdout);
+      }
 
       break;
     }
@@ -503,10 +525,12 @@ bool CbcBoundPropagation::run(OsiSolverInterface *solver,
       }
     } // if (hasNonBinaryVars && round >= 1)
 
-    if (logLevel >= 2)
+    if (logLevel >= 2) {
       printf("  Bound propagation: round %d fixed %d vars, FBBT tightened %d"
              " (total fixed %d).\n",
         nRoundsRun_, nFixed, nFBBT, nBoundPropFixed_);
+      fflush(stdout);
+    }
   }
 
   if (stopReason_ == NotRun) {
@@ -520,6 +544,7 @@ bool CbcBoundPropagation::run(OsiSolverInterface *solver,
     const int totalFixed = nSingletonFixed_ + nBoundPropFixed_;
     printf("  Bound propagation fixed %d vars, FBBT tightened %d in %.3f s.\n",
       totalFixed, nFBBTTightened_, timeUsed_);
+    fflush(stdout);
   }
 
   return true;

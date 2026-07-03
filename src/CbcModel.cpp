@@ -18115,9 +18115,26 @@ int CbcModel::doOneNode(CbcModel *baseModel, CbcNode *&node,
         // Pass remaining wall-clock budget so BP cannot outlast the global
         // time limit.  (startTime=CoinGetTimeOfDay(); limit=remaining seconds)
         const double bpRemaining = std::max(getMaximumSeconds() - getCurrentSeconds(), 1.0);
-        feasible = bp.run(solver_, NULL, 0,
+        const int bpLogLevel = handler_->logLevel();
+        if (bpLogLevel > 1) {
+          fprintf(stdout, "  [nodeBoundProp] START node=%d depth=%d t=%.1fs "
+                           "budget=%.1fs\n",
+            numberNodes_, depth, getCurrentSeconds(), bpRemaining);
+          fflush(stdout);
+        }
+        // Previously logLevel was hardcoded to 0 here, so per-node bound
+        // propagation ran completely silently (no start message, and its
+        // internal end-of-round/end-of-run messages were suppressed too).
+        // This made it impossible to tell from the log whether a stall was
+        // happening inside nodeBoundProp or elsewhere.
+        feasible = bp.run(solver_, NULL, bpLogLevel,
             CbcBoundPropagation::Fixpoint, 0,
             bpRemaining, CoinGetTimeOfDay());
+        if (bpLogLevel > 1) {
+          fprintf(stdout, "  [nodeBoundProp] END   node=%d depth=%d t=%.1fs\n",
+            numberNodes_, depth, getCurrentSeconds());
+          fflush(stdout);
+        }
       }
     }
 
