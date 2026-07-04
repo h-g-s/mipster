@@ -18126,8 +18126,16 @@ int CbcModel::doOneNode(CbcModel *baseModel, CbcNode *&node,
         // propagation ran completely silently (no start message, and its
         // internal end-of-round/end-of-run messages were suppressed too).
         // This made it impossible to tell from the log whether a stall was
-        // happening inside nodeBoundProp or elsewhere.
-        feasible = bp.run(solver_, NULL, bpLogLevel,
+        // happening inside nodeBoundProp or elsewhere. However, at the
+        // normal solve verbosity (logLevel <= 1) the per-node summary line
+        // ("Bound propagation fixed N vars, FBBT tightened M in T s.") is
+        // pure noise since it repeats for every node visited inside B&B.
+        // Only forward the real log level (enabling that summary and the
+        // per-round messages) once the user has asked for the extra detail
+        // (logLevel > 1), matching the threshold used for the START/END
+        // markers above.
+        const int bpRunLogLevel = (bpLogLevel > 1) ? bpLogLevel : 0;
+        feasible = bp.run(solver_, NULL, bpRunLogLevel,
             CbcBoundPropagation::Fixpoint, 0,
             bpRemaining, CoinGetTimeOfDay());
         if (bpLogLevel > 1) {
