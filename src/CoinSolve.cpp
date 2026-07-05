@@ -196,18 +196,17 @@ int main(int argc, const char *argv[])
 #if !defined(_WIN32) || defined(CLP_USE_OPENBLAS)
   set_openblas_threads(1);
 #endif
-  CbcModel model(solver1);
-  
-  CbcParameters parameters;
+  CbcSolver cbc(solver1);
+
 #ifndef CBC_NO_INTERRUPT
-  parameters.enableSignalHandler();
+  cbc.parameters().enableSignalHandler();
 #endif
   // initialize
-  CbcMain0(model, parameters);
-  
+  cbc.initialize();
+
   // define TEST_MESSAGE_HANDLER at top of file to check works on all messages
 #ifdef TEST_MESSAGE_HANDLER
-  test_message_handler(&model);
+  test_message_handler(*cbc.model());
 #endif
 #ifdef CBC_DEBUG_EXTRA
   double startTime = CoinCpuTime();
@@ -217,7 +216,7 @@ int main(int argc, const char *argv[])
   
   if (argc > 2 && !strcmp(argv[2], "-AMPL")) {
      ampl_info info;
-     returnCode = cbcReadAmpl(&info, argc, const_cast< char ** >(argv), model);
+     returnCode = cbcReadAmpl(&info, argc, const_cast< char ** >(argv), *cbc.model());
      if (!returnCode) {
         // Put arguments into a queue.
         // This should be moved to constructor of ClpSolver
@@ -226,8 +225,7 @@ int main(int argc, const char *argv[])
         // We don't need to first two arguments from here on
         inputQueue.pop_front();
         inputQueue.pop_front();
-        returnCode = CbcMain1(inputQueue, model, parameters, dummyCallback,
-                              &info);
+        returnCode = cbc.run(inputQueue, dummyCallback, &info);
      }
   } else {
  #ifdef CBC_DEBUG_EXTRA
@@ -279,7 +277,7 @@ int main(int argc, const char *argv[])
      CoinParamUtils::formInputQueue(inputQueue, "mipster", argc, const_cast< char ** >(argv));
      // Code for CoinError
      try {
-       returnCode = CbcMain1(inputQueue, model, parameters);
+       returnCode = cbc.run(inputQueue);
      } catch (CoinError& e) {
        e.print();
        return 99;
