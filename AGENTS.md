@@ -276,13 +276,41 @@ Key style rules: 2-space indent, no tabs, `PointerAlignment: Right`, `BreakBefor
 | File | Purpose |
 |---|---|
 | `CbcModel.cpp/.hpp` | Core B&B model; central class for the solver |
-| `CbcSolver.cpp/.hpp` | Command-line driver and parameter handling |
+| `CbcSolver.cpp/.hpp` | `CbcSolver` class — top-level driver (parameter init, command parsing, solve pipeline, reporting) |
 | `CbcParameters.cpp/.hpp` | Parameter definitions |
 | `Cbc_C_Interface.cpp/.h` | Public C API |
 | `CbcHeuristic*.cpp` | Primal heuristics (FPump, RINS, RENS, Dive variants, etc.) |
 | `CbcBranch*.cpp` | Branching objects and strategies |
 | `CbcTree.cpp/.hpp` | B&B search tree |
 | `CbcInstanceFeatures.cpp/.hpp` | Extracts MIP instance features to CSV (for ML/analysis) |
+
+### `CbcSolver` class (preferred driver API)
+
+The solve pipeline (parameter init, command parsing, LP solve, preprocessing,
+cut/heuristic setup, branch-and-bound, post-processing, reporting) is
+encapsulated in the `CbcSolver` class (`src/CbcSolver.hpp`), not in free
+functions. Typical usage:
+
+```cpp
+CbcSolver cbc(solver1);          // or CbcSolver cbc; / CbcSolver cbc(model);
+cbc.parameters().enableSignalHandler();
+cbc.initialize();                // set up defaults (was CbcMain0)
+int rc = cbc.run(argc, argv);    // or cbc.run(inputQueue, callBack, amplInfo) — was CbcMain1
+```
+
+All current live call sites use this API directly: `Cbc_C_Interface.cpp` (the
+public C API) and `CoinSolve.cpp` (the `mipster` CLI binary's `main()`).
+
+**`CbcMain0`/`CbcMain1` are deprecated legacy free functions.** They still
+exist as thin, exported (`CBCLIB_EXPORT`) backward-compatible wrappers that
+internally construct a `CbcSolver` and delegate to `initialize()`/`run()` —
+kept only so external code linking `libmipster` and written against the
+classic upstream Cbc API keeps working. **Do not use `CbcMain0`/`CbcMain1` in
+new or refactored internal code — use `CbcSolver` directly instead.** The one
+remaining internal exception is the legacy, CI-untested `-unitTest` MIPLIB
+regression harness (`src/unitTestClp.cpp`), which still calls them because its
+shared raw `CbcModel*` ownership pattern makes migration non-trivial for no
+functional benefit.
 
 ### Conflict Graph Infrastructure
 
