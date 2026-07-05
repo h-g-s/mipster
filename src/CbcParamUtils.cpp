@@ -13,8 +13,11 @@
 #endif
 
 #include <cassert>
+#include <cstring>
+#include <iostream>
 #include <string>
 #include <sstream>
+#include <vector>
 
 #include "CoinUtilsConfig.h"
 
@@ -92,7 +95,10 @@ int doExitParam(CoinParam &param)
 //###########################################################################
 
 /*
-  Function to print the current version.
+  Function to print the current version, together with a summary of the
+  build configuration: optimized vs. debug build, sanitizer (if any),
+  compiler used, target architecture / SIMD extensions actually compiled
+  in, and which optional third-party packages were enabled at build time.
 */
 
 int doVersionParam(CoinParam &param)
@@ -102,7 +108,135 @@ int doVersionParam(CoinParam &param)
   CbcParameters *parameters = cbcParam.parameters();
   assert(parameters != 0);
 
-  std::cout << "Cbc version " << parameters->getVersion() << std::endl;
+  std::cout << "MIPster version " << parameters->getVersion();
+#ifdef CBC_GIT_HASH
+  {
+    const char *ghash = CBC_GIT_HASH;
+    if (ghash && *ghash && strcmp(ghash, "unknown") != 0)
+      std::cout << " (git:" << ghash << ")";
+  }
+#endif
+  std::cout << std::endl;
+
+  // Build type: Release builds are compiled with -DNDEBUG (see --enable-debug
+  // in configure.ac / configster). Sanitizer builds additionally define the
+  // usual ASan/TSan feature-test macros.
+#if defined(__SANITIZE_ADDRESS__) || (defined(__has_feature) && __has_feature(address_sanitizer))
+  std::cout << "Build type    : Debug (AddressSanitizer)" << std::endl;
+#elif defined(__SANITIZE_THREAD__) || (defined(__has_feature) && __has_feature(thread_sanitizer))
+  std::cout << "Build type    : Debug (ThreadSanitizer)" << std::endl;
+#elif defined(NDEBUG)
+  std::cout << "Build type    : Release (optimized, assertions disabled)" << std::endl;
+#else
+  std::cout << "Build type    : Debug (assertions enabled)" << std::endl;
+#endif
+
+  // Compiler identification.
+  std::cout << "Compiler      : "
+#if defined(__clang__)
+            << "Clang " << __clang_major__ << "." << __clang_minor__ << "." << __clang_patchlevel__
+#elif defined(__INTEL_COMPILER)
+            << "Intel C++ " << __INTEL_COMPILER
+#elif defined(__GNUC__)
+            << "GCC " << __GNUC__ << "." << __GNUC_MINOR__ << "." << __GNUC_PATCHLEVEL__
+#elif defined(_MSC_VER)
+            << "MSVC " << _MSC_VER
+#else
+            << "unknown"
+#endif
+            << std::endl;
+
+  // Target architecture.
+  std::cout << "Architecture  : "
+#if defined(__x86_64__) || defined(_M_X64)
+            << "x86_64"
+#elif defined(__aarch64__) || defined(_M_ARM64)
+            << "aarch64"
+#elif defined(__i386__) || defined(_M_IX86)
+            << "x86"
+#else
+            << "unknown"
+#endif
+            << std::endl;
+
+  // SIMD / vectorization extensions the compiler actually had enabled
+  // (reflects -march=native or explicit -m<isa> flags), plus the
+  // hand-written AVX2 code paths gated by -DCOIN_AVX2.
+  {
+    std::vector<std::string> simd;
+#if defined(__AVX512F__)
+    simd.push_back("AVX512F");
+#endif
+#if defined(__AVX2__)
+    simd.push_back("AVX2");
+#endif
+#if defined(__FMA__)
+    simd.push_back("FMA");
+#endif
+#if defined(__AVX__)
+    simd.push_back("AVX");
+#endif
+#if defined(__SSE4_2__)
+    simd.push_back("SSE4.2");
+#endif
+#if defined(__ARM_NEON)
+    simd.push_back("NEON");
+#endif
+    std::cout << "SIMD (compiler): ";
+    if (simd.empty()) {
+      std::cout << "none detected (no -march=native / ISA flags)";
+    } else {
+      for (size_t i = 0; i < simd.size(); i++) {
+        if (i)
+          std::cout << ", ";
+        std::cout << simd[i];
+      }
+    }
+    std::cout << std::endl;
+  }
+#ifdef COIN_AVX2
+  std::cout << "Hand-written AVX2 code paths : enabled (-DCOIN_AVX2)" << std::endl;
+#else
+  std::cout << "Hand-written AVX2 code paths : disabled" << std::endl;
+#endif
+
+  // Optional third-party packages / features compiled in.
+  std::cout << "Optional packages:" << std::endl;
+#ifdef CBC_HAS_ZLIB
+  std::cout << "  zlib (.gz support)      : yes" << std::endl;
+#else
+  std::cout << "  zlib (.gz support)      : no" << std::endl;
+#endif
+#ifdef CBC_HAS_BZLIB
+  std::cout << "  bzip2 (.bz2 support)    : yes" << std::endl;
+#else
+  std::cout << "  bzip2 (.bz2 support)    : no" << std::endl;
+#endif
+#ifdef CBC_HAS_LAPACK
+  std::cout << "  LAPACK                  : yes" << std::endl;
+#else
+  std::cout << "  LAPACK                  : no" << std::endl;
+#endif
+#ifdef CLP_USE_OPENBLAS
+  std::cout << "  OpenBLAS                : yes" << std::endl;
+#else
+  std::cout << "  OpenBLAS                : no" << std::endl;
+#endif
+#ifdef CBC_HAS_AMD
+  std::cout << "  AMD (ordering)          : yes" << std::endl;
+#else
+  std::cout << "  AMD (ordering)          : no" << std::endl;
+#endif
+#ifdef CBC_HAS_ASL
+  std::cout << "  ASL (AMPL solver lib.)  : yes" << std::endl;
+#else
+  std::cout << "  ASL (AMPL solver lib.)  : no" << std::endl;
+#endif
+#ifdef CBC_THREAD
+  std::cout << "  Parallel B&B (threads)  : yes" << std::endl;
+#else
+  std::cout << "  Parallel B&B (threads)  : no" << std::endl;
+#endif
 
   return (0);
 }
