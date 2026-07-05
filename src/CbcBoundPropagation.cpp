@@ -131,7 +131,7 @@ bool CbcBoundPropagation::run(OsiSolverInterface *solver,
       timeUsed_ = (CoinGetTimeOfDay()) - t0;
 
       if (logLevel >= 1) {
-        printf("  Bound propagation: INFEASIBLE (singleton tightening), "
+        printf("  Bound tightening: INFEASIBLE (singleton rows), "
                "%.3f s.\n",
           timeUsed_);
         fflush(stdout);
@@ -168,9 +168,14 @@ bool CbcBoundPropagation::run(OsiSolverInterface *solver,
     stopReason_ = ReachedFixpoint;
     timeUsed_ = (CoinGetTimeOfDay()) - t0;
 
+    // Singleton tightening and fixpoint/FBBT propagation are all just
+    // row-based bound tightening — report a single unified count instead of
+    // separate "bound propagation"/"FBBT" terminology (a fixed variable is
+    // simply the extreme case of a tightened bound, so it is included in the
+    // total).
     if (logLevel >= 1) {
-      printf("  Bound propagation fixed %d vars in %.3f s.\n",
-        nSingletonFixed_, timeUsed_);
+      printf("  Bound tightening: %d bounds tightened (%d fixed) in %.3f s.\n",
+        nSingletonTightened_ + nSingletonFixed_, nSingletonFixed_, timeUsed_);
       fflush(stdout);
     }
 
@@ -365,7 +370,7 @@ bool CbcBoundPropagation::run(OsiSolverInterface *solver,
       timeUsed_ = tNow - t0;
 
       if (logLevel >= 1) {
-        printf("  Bound propagation: fixed %d (%d singleton + %d propagation, "
+        printf("  Bound tightening: fixed %d (%d singleton + %d propagation, "
                "%d round(s), TIME LIMIT), %.3f s.\n",
           nSingletonFixed_ + nBoundPropFixed_, nSingletonFixed_, nBoundPropFixed_,
           nRoundsRun_, timeUsed_);
@@ -420,7 +425,7 @@ bool CbcBoundPropagation::run(OsiSolverInterface *solver,
           const std::string colName = (infeasibleCol_ < solver->getNumCols())
             ? solver->getColName(infeasibleCol_)
             : "(unknown)";
-          printf("  Bound propagation: INFEASIBLE in round %d — "
+          printf("  Bound tightening: INFEASIBLE in round %d — "
                  "row %d (%s), col %d (%s), %.3f s.\n",
             nRoundsRun_, infeasibleRow_, rowName.c_str(),
             infeasibleCol_, colName.c_str(), timeUsed_);
@@ -428,11 +433,11 @@ bool CbcBoundPropagation::run(OsiSolverInterface *solver,
           const std::string rowName = (infeasibleRow_ < solver->getNumRows())
             ? solver->getRowName(infeasibleRow_)
             : "(unknown)";
-          printf("  Bound propagation: INFEASIBLE in round %d — "
+          printf("  Bound tightening: INFEASIBLE in round %d — "
                  "row %d (%s), %.3f s.\n",
             nRoundsRun_, infeasibleRow_, rowName.c_str(), timeUsed_);
         } else {
-          printf("  Bound propagation: INFEASIBLE in round %d, %.3f s.\n",
+          printf("  Bound tightening: INFEASIBLE in round %d, %.3f s.\n",
             nRoundsRun_, timeUsed_);
         }
         fflush(stdout);
@@ -541,9 +546,14 @@ bool CbcBoundPropagation::run(OsiSolverInterface *solver,
   timeUsed_ = (CoinGetTimeOfDay()) - t0;
 
   if (logLevel >= 1) {
+    // Singleton tightening, fixpoint propagation, and FBBT are all just
+    // row-based bound tightening — report a single unified count rather than
+    // separate "bound propagation"/"FBBT" terminology (a fixed variable is
+    // simply the extreme case of a tightened bound, so it is included here).
     const int totalFixed = nSingletonFixed_ + nBoundPropFixed_;
-    printf("  Bound propagation fixed %d vars, FBBT tightened %d in %.3f s.\n",
-      totalFixed, nFBBTTightened_, timeUsed_);
+    const int totalTightened = nSingletonTightened_ + totalFixed + nFBBTTightened_;
+    printf("  Bound tightening: %d bounds tightened (%d fixed) in %.3f s.\n",
+      totalTightened, totalFixed, timeUsed_);
     fflush(stdout);
   }
 

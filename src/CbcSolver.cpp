@@ -1241,7 +1241,7 @@ int CbcSolver::applyLpMethod(bool applyPreprocessing)
         statistics_.elapsed_seconds = CoinWallclockTime();
         if (logLevel >= 1)
           printGeneralMessage(model_,
-            "Bound propagation: infeasibility proved — skipping solve.");
+            "Bound tightening: infeasibility proved — skipping solve.");
         return -1;
       }
     } else if (parameters_[CbcParam::SINGLETONBOUNDS]->modeVal()) {
