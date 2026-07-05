@@ -793,7 +793,13 @@ void CbcOutput::printSolverHeader(CoinMessageHandler *handler, int logLevel,
 
 #ifdef CBC_GIT_HASH
   const char *ghash = CBC_GIT_HASH;
-  if (ghash && *ghash && std::strcmp(ghash, "unknown") != 0)
+  // Only show the git hash when it carries information beyond the plain
+  // version tag (e.g. commits-since-tag or a dirty working tree). When
+  // HEAD is exactly the tagged release commit, "git describe" returns
+  // just "vX.Y.Z", which would be redundant with the version already
+  // printed above.
+  std::string plainTag = std::string("v") + CBC_VERSION;
+  if (ghash && *ghash && std::strcmp(ghash, "unknown") != 0 && plainTag != ghash)
     oss << " (git:" << ghash << ")";
 #endif
 
