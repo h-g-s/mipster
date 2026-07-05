@@ -5292,10 +5292,6 @@ int CbcSolver::postprocess(
            << babModel_->getNodeCount() << std::endl;
     buffer << "Total iterations:               ";
     buffer << babModel_->getIterationCount() << std::endl;
-#if CBC_QUIET == 0
-    buffer << "Time (B&C, Wallclock seconds):  "
-           << CoinGetTimeOfDay() - time1Elapsed << std::endl;
-#endif
     printGeneralMessage(model_, buffer.str());
     int returnCode_local = 0;
     if (callBack != NULL)
@@ -7234,8 +7230,19 @@ int CbcSolver::run(std::deque< std::string > inputQueue,
     double dValue;
     std::string prompt = "Cbc: ";
 
+    // A bare "-version"/"--version" invocation should just print version info
+    // and exit -- no banner, no solve, no footer.
+    bool versionOnlyQuery = false;
+    if (inputQueue.size() == 1) {
+      std::string tok = inputQueue[0];
+      while (!tok.empty() && tok[0] == '-')
+        tok = tok.substr(1);
+      if (tok == "version")
+        versionOnlyQuery = true;
+    }
+
 #if CBC_QUIET == 0
-    if (parameters.printWelcome()) {
+    if (parameters.printWelcome() && !versionOnlyQuery) {
       // Pre-scan the input queue for explicit -log and -utf8 overrides so that
       // e.g. "cbc -log 0 file.mps -solve" suppresses the header even before
       // the command loop processes the -log token.
@@ -13417,7 +13424,7 @@ int CbcSolver::run(std::deque< std::string > inputQueue,
           break;
         case CbcParam::PRINTVERSION:
           CbcParamUtils::doVersionParam(*cbcParam);
-          break;
+          return 0;
         case CbcParam::WRITESTATS: {
           cbcParam->readValue(inputQueue, fileName, &message);
           CoinParamUtils::processFile(fileName,
@@ -13586,8 +13593,8 @@ int CbcSolver::run(std::deque< std::string > inputQueue,
   }
 #if CBC_QUIET == 0
   buffer.str("");
-  buffer << "Total time (Wallclock seconds): " << CoinGetTimeOfDay() - time0Elapsed_
-         << "   (CPU seconds):             " << CoinCpuTime() - time0_ << std::endl;
+  buffer << "Total time (CPU seconds):       " << CoinCpuTime() - time0_ << std::endl;
+  buffer << "Total time (Wallclock seconds): " << CoinGetTimeOfDay() - time0Elapsed_ << std::endl;
   printGeneralMessage(model_, buffer.str());
 #endif
   delete[] lotsize_;
