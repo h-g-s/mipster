@@ -18,9 +18,6 @@
 /* Define to 1 if the AMD package is available */
 #undef CBC_HAS_AMD
 
-/* Define to 1 if ASL is available. */
-#undef CBC_HAS_ASL
-
 /* Define to 1 if bzlib is available */
 #undef CBC_HAS_BZLIB
 

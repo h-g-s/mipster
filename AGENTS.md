@@ -19,6 +19,7 @@ The **repository root is the monorepo** — it embeds CoinUtils, Clp, and Cgl so
 - **GLPK/GMPL support** — removed from CoinUtils and Cbc
 - **Non-Clp LP solvers** — Cplex, DyLP, Mosek, SoPlex, HiGHS, Symphony support removed from Cbc and Cgl
 - **GPL dependencies** — readline (interactive mode) and nauty removed
+- **AMPL/ASL support** — MIPster does not link against the AMPL Solver Library (ASL); `.nl` file reading is a no-op stub
 - **Interactive mode** — `mipster` binary no longer enters interactive mode when called without arguments; it prints help and exits
 - **Osi project** — merged into the monorepo
 

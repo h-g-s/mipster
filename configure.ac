@@ -77,9 +77,6 @@ AC_COIN_CHK_LIBHDR(AMD,[CbcLib],[-lamd],[-I/usr/include/suitesparse],[],
 #                       Other third party software                          #
 #############################################################################
 
-# Ampl Solver library
-AC_COIN_CHK_PKG(ASL,[CbcLib],[coinasl])
-
 # Nauty library (for symmetry detection).
 
 #############################################################################

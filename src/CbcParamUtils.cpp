@@ -196,47 +196,42 @@ int doVersionParam(CoinParam &param)
   }
 #ifdef COIN_AVX2
   std::cout << "Hand-written AVX2 code paths : enabled (-DCOIN_AVX2)" << std::endl;
-#else
-  std::cout << "Hand-written AVX2 code paths : disabled" << std::endl;
 #endif
 
-  // Optional third-party packages / features compiled in.
-  std::cout << "Optional packages:" << std::endl;
+  // Optional third-party packages / features compiled in (only those
+  // actually enabled are listed).
+  {
+    std::vector<std::string> features;
 #ifdef CBC_HAS_ZLIB
-  std::cout << "  zlib (.gz support)      : yes" << std::endl;
-#else
-  std::cout << "  zlib (.gz support)      : no" << std::endl;
+    features.push_back("zlib (.gz support)");
 #endif
 #ifdef CBC_HAS_BZLIB
-  std::cout << "  bzip2 (.bz2 support)    : yes" << std::endl;
-#else
-  std::cout << "  bzip2 (.bz2 support)    : no" << std::endl;
+    features.push_back("bzip2 (.bz2 support)");
 #endif
 #ifdef CBC_HAS_LAPACK
-  std::cout << "  LAPACK                  : yes" << std::endl;
-#else
-  std::cout << "  LAPACK                  : no" << std::endl;
+    features.push_back("LAPACK");
 #endif
 #ifdef CLP_USE_OPENBLAS
-  std::cout << "  OpenBLAS                : yes" << std::endl;
-#else
-  std::cout << "  OpenBLAS                : no" << std::endl;
+    features.push_back("OpenBLAS");
 #endif
 #ifdef CBC_HAS_AMD
-  std::cout << "  AMD (ordering)          : yes" << std::endl;
-#else
-  std::cout << "  AMD (ordering)          : no" << std::endl;
-#endif
-#ifdef CBC_HAS_ASL
-  std::cout << "  ASL (AMPL solver lib.)  : yes" << std::endl;
-#else
-  std::cout << "  ASL (AMPL solver lib.)  : no" << std::endl;
+    features.push_back("AMD (ordering)");
 #endif
 #ifdef CBC_THREAD
-  std::cout << "  Parallel B&B (threads)  : yes" << std::endl;
-#else
-  std::cout << "  Parallel B&B (threads)  : no" << std::endl;
+    features.push_back("Parallel B&B (threads)");
 #endif
+    std::cout << "Optional packages included: ";
+    if (features.empty()) {
+      std::cout << "none";
+    } else {
+      for (size_t i = 0; i < features.size(); i++) {
+        if (i)
+          std::cout << ", ";
+        std::cout << features[i];
+      }
+    }
+    std::cout << std::endl;
+  }
 
   return (0);
 }

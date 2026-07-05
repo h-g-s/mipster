@@ -988,7 +988,8 @@ public:
   /** Read a problem in MPS or GAMS format from the given filename.
    */
   CoinModel(const char *fileName, int allowStrings = 0);
-  /** Read a problem from AMPL nl file, if linked against ASL
+  /** Read a problem from AMPL nl file. Not supported: MIPster does not
+   *  link against the AMPL Solver Library (ASL).
    */
   CoinModel(int nonLinear, const char *fileName, const void *info);
   /// From arrays
