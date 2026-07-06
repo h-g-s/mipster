@@ -3691,7 +3691,15 @@ void CbcModel::branchAndBound(int doStatistics)
     }
   }
   // See if can stop on gap
-  bestPossibleObjective_ = solver_->getObjValue() * solver_->getObjSenseInCbc();
+  // Only trust the solver's objective when the LP is actually proven
+  // optimal. If root-node cut generation was interrupted (e.g. by the
+  // time limit) partway through a resolve(), the solver can be left in a
+  // non-optimal state (proven infeasible/abandoned/unsolved) whose
+  // getObjValue() is meaningless (observed to return exactly 0 on some
+  // platforms). In that case keep the last known-good bound (set above,
+  // before cut generation) instead of overwriting it with a bogus value.
+  if (solver_->isProvenOptimal())
+    bestPossibleObjective_ = solver_->getObjValue() * solver_->getObjSenseInCbc();
   if (canStopOnGap()) {
     if (bestPossibleObjective_ < getCutoff())
       stoppedOnGap_ = true;
@@ -9234,6 +9242,12 @@ bool CbcModel::solveWithCuts(OsiCuts &cuts, int numberTries, CbcNode *node)
 
   double direction = solver_->getObjSenseInCbc();
   double startObjective = solver_->getObjValue() * direction;
+  // Last objective value obtained from a resolve() that was actually
+  // proven optimal (i.e. trustworthy). Used as a fallback for reporting
+  // when a later resolve() is interrupted (e.g. by the time limit) and
+  // leaves the solver in a non-optimal state, whose getObjValue() must
+  // not be trusted (it can be a meaningless 0, or worse).
+  double lastGoodObjective = startObjective;
 
   currentPassNumber_ = 0;
   passGenCutsBase_.clear(); // reset per-pass generator cut tracking
@@ -9981,6 +9995,8 @@ bool CbcModel::solveWithCuts(OsiCuts &cuts, int numberTries, CbcNode *node)
       // solver_->setHintParam(OsiDoDualInResolve,false,OsiHintTry);
       feasible = (resolve(node ? node->nodeInfo() : NULL, 2) != 0);
       // solver_->setHintParam(OsiDoDualInResolve,true,OsiHintTry);
+      if (solver_->isProvenOptimal())
+        lastGoodObjective = solver_->getObjValue() * direction;
       if (maximumSecondsReached()) {
         numberTries = -1000; // exit
         feasible = false;
@@ -10569,7 +10585,17 @@ bool CbcModel::solveWithCuts(OsiCuts &cuts, int numberTries, CbcNode *node)
     /* If cuts just at root node then it will probably be faster to
            update matrix and leave all in */
     int willBeCutsInTree = 0;
-    double thisObjective = solver_->getObjValue() * direction;
+    // Only trust the solver's own objective when the LP was actually
+    // proven optimal. If the last resolve() in this loop was interrupted
+    // (e.g. by the time limit) the solver can be left in a non-optimal
+    // state (proven infeasible/abandoned/unsolved) where getObjValue()
+    // is meaningless (observed to return exactly 0 on some platforms).
+    // In that case fall back to the last objective value that we know
+    // came from a genuinely optimal solve, so the reported bound/cut
+    // summary reflects reality instead of a bogus value.
+    double thisObjective = solver_->isProvenOptimal()
+      ? solver_->getObjValue() * direction
+      : lastGoodObjective;
     // get sizes
     int numberRowsAdded = solver_->getNumRows() - numberRowsAtStart;
     CoinBigIndex numberElementsAdded = solver_->getNumElements() - numberElementsAtStart;
