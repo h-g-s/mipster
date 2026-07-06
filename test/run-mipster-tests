@@ -94,6 +94,94 @@ if [ "$DEBUG_MODE" -eq 1 ]; then
   fi
 fi
 
+# ── CPU-aware parallelism ────────────────────────────────────────────────────
+# Never launch more concurrent single-threaded solves than there are logical
+# cores: oversubscribing a constrained CI runner (e.g. 4 vCPUs) with dozens of
+# parallel CBC processes causes severe scheduling contention, which can make
+# individual tests take vastly longer than their own internal wall-clock
+# fallback expects (a test's Cbc_setMaximumSeconds() call only fires once the
+# process actually gets scheduled to check it). Override with
+# MIPSTER_TEST_JOBS if you want more/less than the detected core count.
+detect_ncpu() {
+  if command -v nproc >/dev/null 2>&1; then
+    nproc
+  elif command -v getconf >/dev/null 2>&1 && getconf _NPROCESSORS_ONLN >/dev/null 2>&1; then
+    getconf _NPROCESSORS_ONLN
+  elif command -v sysctl >/dev/null 2>&1; then
+    sysctl -n hw.ncpu
+  else
+    echo 4
+  fi
+}
+NCPU="$(detect_ncpu)"
+MAX_PARALLEL="${MIPSTER_TEST_JOBS:-$NCPU}"
+
+# ── Per-test watchdog ────────────────────────────────────────────────────────
+# Each test sets its own internal Cbc wall-clock fallback (Cbc_setMaximumSeconds
+# / DBL_PARAM_TIME_LIMIT), but that check only fires when the process gets
+# scheduled — under contention (or a genuine hang/livelock) a test can run far
+# longer than it should. We externally enforce "internal budget + tolerance"
+# and kill the process if it's exceeded, so a single stuck test can never
+# again silently consume the whole CI job's execution-time budget (as
+# happened once for 6+ hours). Add MIPSTER_TEST_TIMEOUT_TOLERANCE seconds of
+# slack (default 300s / 5 min) on top of each test's own expected budget.
+TIMEOUT_TOLERANCE_SEC="${MIPSTER_TEST_TIMEOUT_TOLERANCE:-300}"
+# Generous fallback for tests without an explicitly-known internal budget below.
+DEFAULT_EXPECTED_TIMEOUT_SEC=600
+
+# Known internal wall-clock budgets (seconds), mirroring each test's own
+# Cbc_setMaximumSeconds()/DBL_PARAM_TIME_LIMIT call. Keep in sync if a test's
+# internal budget changes — an out-of-date (too small) entry here just means
+# a slower-than-usual-but-legitimate run gets killed and retried verbosely,
+# which is safe; it never causes false failures on its own.
+get_expected_timeout_sec() {
+  case "$1" in
+    CInterfaceTest_mescn)       echo 300 ;;
+    CInterfaceTest_graphdraw)   echo 60 ;;
+    CInterfaceTest_trdta5581)   echo 30 ;;
+    CInterfaceTest_trd445c)     echo 300 ;;
+    CInterfaceTest_trdtaunimep) echo 300 ;;
+    CInterfaceTest_j3041_1)     echo 180 ;;
+    CInterfaceTest_yue20013)    echo 600 ;;
+    CInterfaceTest_etDecsi)     echo 120 ;;
+    CInterfaceTest_dano3_3)     echo 300 ;;
+    CInterfaceTest_leo1)        echo 600 ;;
+    CInterfaceTest_bpc)         echo 600 ;;
+    CInterfaceTest_mis_*)       echo 300 ;;
+    CInterfaceTest_jssp_*)      echo 120 ;;
+    CInterfaceTest_upms_*)      echo 120 ;;
+    *)                          echo "$DEFAULT_EXPECTED_TIMEOUT_SEC" ;;
+  esac
+}
+
+# Portable "run with hard timeout" — GNU coreutils' `timeout` isn't guaranteed
+# on macOS runners, so implement the watchdog directly with a background
+# killer process. Sets global TIMED_OUT=1 if the process had to be killed.
+TIMED_OUT=0
+run_with_timeout() {
+  local limit="$1"; shift
+  "$@" &
+  local pid=$!
+  (
+    sleep "$limit"
+    kill -TERM "$pid" 2>/dev/null || true
+    sleep 10
+    kill -KILL "$pid" 2>/dev/null || true
+  ) &
+  local watchdog=$!
+  local rc=0
+  wait "$pid" || rc=$?
+  # Watchdog still alive => test finished on its own; stop it and clean up.
+  if kill -0 "$watchdog" 2>/dev/null; then
+    kill "$watchdog" 2>/dev/null || true
+    TIMED_OUT=0
+  else
+    TIMED_OUT=1
+  fi
+  wait "$watchdog" 2>/dev/null || true
+  return "$rc"
+}
+
 # ── Test list (order matters for readability) ────────────────────────────────
 TESTS=(
   CInterfaceTest
@@ -248,54 +336,123 @@ get_fixture_arg() {
   esac
 }
 
-# Phase 1: launch all tests in background
+# Phase 1: resolve binaries/args for every test up front (no launching yet)
+declare -a _args _needs_fixtures _timeout_sec _rcfiles _timeoutfiles _elapsedfiles
 for i in "${!TESTS[@]}"; do
   name="${TESTS[$i]}"
-  # Resolve actual binary name (may differ for per-fixture entries)
   bin_name=$(get_bin_name "$name")
   bin=$(find_bin "$bin_name")
-  tmpfile=$(mktemp)
-  _tmpfiles[$i]="$tmpfile"
   _bins[$i]="$bin"
-  _start_ms[$i]=$(get_epoch_ms)
-  if [ -n "$bin" ]; then
-    # Check if this test needs fixture directory
-    needs_fixtures=0
-    for ft in "${FIXTURE_TESTS[@]}"; do
-      if [ "$name" = "$ft" ]; then
-        needs_fixtures=1
-        break
-      fi
-    done
+  _tmpfiles[$i]=$(mktemp)
+  _rcfiles[$i]=$(mktemp)
+  _timeoutfiles[$i]=$(mktemp)
+  _elapsedfiles[$i]=$(mktemp)
 
-    fixture_arg=$(get_fixture_arg "$name")
-    if [ "$needs_fixtures" -eq 1 ] && [ -n "$MIPSTER_FIXTURE_DIR" ]; then
-      "$bin" "$MIPSTER_FIXTURE_DIR" ${fixture_arg:+"$fixture_arg"} > "$tmpfile" 2>&1 &
-    else
-      "$bin" > "$tmpfile" 2>&1 &
+  needs_fixtures=0
+  for ft in "${FIXTURE_TESTS[@]}"; do
+    if [ "$name" = "$ft" ]; then
+      needs_fixtures=1
+      break
     fi
-    _pids[$i]=$!
+  done
+  _needs_fixtures[$i]="$needs_fixtures"
+
+  fixture_arg=$(get_fixture_arg "$name")
+  if [ "$needs_fixtures" -eq 1 ] && [ -n "$MIPSTER_FIXTURE_DIR" ]; then
+    _args[$i]="$MIPSTER_FIXTURE_DIR ${fixture_arg}"
   else
-    _pids[$i]=""
+    _args[$i]=""
   fi
+
+  expected=$(get_expected_timeout_sec "$name")
+  _timeout_sec[$i]=$(( expected + TIMEOUT_TOLERANCE_SEC ))
 done
 
-# Phase 2: collect results in launch order
+echo "    parallelism: ${MAX_PARALLEL} concurrent test(s) (detected ${NCPU} core(s); override with MIPSTER_TEST_JOBS)"
+echo ""
+
+# Launches one test in the background; writes exit code + timeout flag to
+# per-test files once done. On timeout, automatically retries once with
+# MIPSTER_FORCE_LOG_LEVEL=3 for extra diagnostics before giving up.
+launch_test() {
+  local i="$1"
+  local bin="${_bins[$i]}"
+  local tmpfile="${_tmpfiles[$i]}"
+  local rcfile="${_rcfiles[$i]}"
+  local timeoutfile="${_timeoutfiles[$i]}"
+  local elapsedfile="${_elapsedfiles[$i]}"
+  local timeout_sec="${_timeout_sec[$i]}"
+  # shellcheck disable=SC2206 (word-splitting of args is intentional here)
+  local args=(${_args[$i]})
+
+  local start_ms
+  start_ms=$(get_epoch_ms)
+  _start_ms[$i]="$start_ms"
+  (
+    run_with_timeout "$timeout_sec" "$bin" "${args[@]}" > "$tmpfile" 2>&1
+    rc=$?
+    timed_out="$TIMED_OUT"
+    if [ "$timed_out" -eq 1 ]; then
+      {
+        echo ""
+        echo "*** TIMEOUT: exceeded ${timeout_sec}s (expected budget + ${TIMEOUT_TOLERANCE_SEC}s tolerance) — process killed. ***"
+        echo "*** Re-running once with MIPSTER_FORCE_LOG_LEVEL=3 for diagnostics... ***"
+        echo ""
+      } >> "$tmpfile"
+      MIPSTER_FORCE_LOG_LEVEL=3 run_with_timeout "$timeout_sec" "$bin" "${args[@]}" >> "$tmpfile" 2>&1
+      rc=124 # sentinel: a timeout is always reported as a failure, regardless
+             # of whether the diagnostic re-run happened to finish in time.
+    fi
+    # Capture elapsed time here (test completion), not later in Phase 2 —
+    # Phase 2 only runs after the whole batched suite finishes, so computing
+    # "now - start" there would report time-until-suite-end, not
+    # time-until-this-test-end.
+    echo "$(( $(get_epoch_ms) - start_ms ))" > "$elapsedfile"
+    echo "$rc" > "$rcfile"
+    echo "$timed_out" > "$timeoutfile"
+  ) &
+  _pids[$i]=$!
+}
+
+# Run tests in CPU-capped batches (portable across bash versions — avoids
+# `wait -n`, which isn't available in the bash 3.2 shipped on macOS).
+NUM_TESTS=${#TESTS[@]}
+batch_start=0
+while [ "$batch_start" -lt "$NUM_TESTS" ]; do
+  batch_end=$(( batch_start + MAX_PARALLEL ))
+  [ "$batch_end" -gt "$NUM_TESTS" ] && batch_end="$NUM_TESTS"
+  for (( j = batch_start; j < batch_end; j++ )); do
+    if [ -n "${_bins[$j]}" ]; then
+      launch_test "$j"
+    fi
+  done
+  for (( j = batch_start; j < batch_end; j++ )); do
+    if [ -n "${_pids[$j]:-}" ]; then
+      wait "${_pids[$j]}" 2>/dev/null || true
+    fi
+  done
+  batch_start="$batch_end"
+done
+
+# Phase 2: collect + print results in original order
 for i in "${!TESTS[@]}"; do
   name="${TESTS[$i]}"
   idx=$(( i + 1 ))
   bin="${_bins[$i]}"
   tmpfile="${_tmpfiles[$i]}"
-  pid="${_pids[$i]}"
+  rcfile="${_rcfiles[$i]}"
+  timeoutfile="${_timeoutfiles[$i]}"
+  elapsedfile="${_elapsedfiles[$i]}"
 
   if [ -z "$bin" ]; then
     printf "[%*d/%d] %-*s SKIP  (not found)\n" "$W" "$idx" "$TOTAL" "$NAME_COL" "$name"
-    rm -f "$tmpfile"
+    rm -f "$tmpfile" "$rcfile" "$timeoutfile" "$elapsedfile"
     continue
   fi
 
-  wait "$pid" && rc=0 || rc=$?
-  elapsed_ms=$(( $(get_epoch_ms) - _start_ms[$i] ))
+  rc=$(cat "$rcfile" 2>/dev/null || echo 1)
+  timed_out=$(cat "$timeoutfile" 2>/dev/null || echo 0)
+  elapsed_ms=$(cat "$elapsedfile" 2>/dev/null || echo 0)
   elapsed_s=$(awk "BEGIN { printf \"%.1f\", ${elapsed_ms}/1000 }" 2>/dev/null || echo "${elapsed_ms}")
 
   printf "[%*d/%d] %-*s" "$W" "$idx" "$TOTAL" "$NAME_COL" "$name"
@@ -305,14 +462,18 @@ for i in "${!TESTS[@]}"; do
     PASS=$(( PASS + 1 ))
     TEST_RESULTS+=("${name}:${elapsed_ms}")
   else
-    printf " FAIL  (%ss)\n" "$elapsed_s"
+    if [ "$timed_out" -eq 1 ]; then
+      printf " FAIL  (%ss, TIMEOUT)\n" "$elapsed_s"
+    else
+      printf " FAIL  (%ss)\n" "$elapsed_s"
+    fi
     FAIL=$(( FAIL + 1 ))
     FAILURES+=("$name")
     TEST_RESULTS+=("${name}:${elapsed_ms}")
     sed 's/^/    | /' "$tmpfile"
     printf '    \n'
   fi
-  rm -f "$tmpfile"
+  rm -f "$tmpfile" "$rcfile" "$timeoutfile" "$elapsedfile"
 done
 
 # ── Summary ──────────────────────────────────────────────────────────────────

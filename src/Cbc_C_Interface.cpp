@@ -5019,6 +5019,12 @@ Cbc_getLogLevel(Cbc_Model *model)
 void CBC_LINKAGE
 Cbc_setLogLevel(Cbc_Model *model, int logLevel)
 {
+  // Allow forcing a higher log level from outside (e.g. test harnesses that
+  // want to re-run a hung/timed-out test with full diagnostic output,
+  // without having to recompile or edit the test source).
+  if (const char *forced = getenv("MIPSTER_FORCE_LOG_LEVEL")) {
+    logLevel = atoi(forced);
+  }
   model->int_param[INT_PARAM_LOG_LEVEL] = logLevel;
 }
 
