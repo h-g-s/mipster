@@ -389,8 +389,8 @@ launch_test() {
   start_ms=$(get_epoch_ms)
   _start_ms[$i]="$start_ms"
   (
-    run_with_timeout "$timeout_sec" "$bin" "${args[@]}" > "$tmpfile" 2>&1
-    rc=$?
+    rc=0
+    run_with_timeout "$timeout_sec" "$bin" "${args[@]}" > "$tmpfile" 2>&1 || rc=$?
     timed_out="$TIMED_OUT"
     if [ "$timed_out" -eq 1 ]; then
       {
@@ -399,7 +399,7 @@ launch_test() {
         echo "*** Re-running once with MIPSTER_FORCE_LOG_LEVEL=3 for diagnostics... ***"
         echo ""
       } >> "$tmpfile"
-      MIPSTER_FORCE_LOG_LEVEL=3 run_with_timeout "$timeout_sec" "$bin" "${args[@]}" >> "$tmpfile" 2>&1
+      MIPSTER_FORCE_LOG_LEVEL=3 run_with_timeout "$timeout_sec" "$bin" "${args[@]}" >> "$tmpfile" 2>&1 || true
       rc=124 # sentinel: a timeout is always reported as a failure, regardless
              # of whether the diagnostic re-run happened to finish in time.
     fi
