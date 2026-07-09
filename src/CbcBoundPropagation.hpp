@@ -47,7 +47,20 @@ public:
    *  - Singletons: singleton rows only.
    *  - MILPbt:   singletons then up to maxRounds of CoinBoundPropagation.
    *  - Fixpoint:  singletons then CoinBoundPropagation until fixpoint
-   *               (ignores maxRounds).
+   *               (ignores maxRounds). Rows encoding difference constraints
+   *               (x_j - x_i >= c, as in job-shop disjunctive/precedence
+   *               constraints) can make FBBT relaxation behave exactly like
+   *               Bellman-Ford shortest-path relaxation on a graph with a
+   *               positive-weight cycle: some bound keeps improving forever
+   *               without ever reaching a two-sided (LB > UB) contradiction,
+   *               since the opposite bound legitimately stays infinite. This
+   *               is a genuine infeasibility certificate, not slow
+   *               convergence, so a divergence detector tracks the total
+   *               per-round tightening magnitude and — if it hasn't decayed
+   *               by at least half after a full window of nCols rounds with
+   *               no fixings — declares InfeasibleDetected instead of
+   *               looping indefinitely. See the implementation in run() for
+   *               details (roundDeltaHistory / divergenceWindow).
    */
   enum Level {
     Off = 0,

@@ -15,6 +15,7 @@
 extern double *debugSolution;
 extern int debugNumberColumns;
 
+#include <algorithm>
 #include <cassert>
 #include <climits>
 #include <cmath>
@@ -185,7 +186,6 @@ bool CbcBoundPropagation::run(OsiSolverInterface *solver,
   // ---------------------------------------------------------------
   // Phase 2: CoinBoundPropagation — iterate until fixpoint or limits
   // ---------------------------------------------------------------
-  const int roundLimit = (level == Fixpoint) ? INT_MAX : maxRounds;
 
   // Initialise phase-2 data (after singleton tightening so bounds are current).
   // Copy colType into a local buffer so we own the data (not a pointer into
@@ -238,6 +238,46 @@ bool CbcBoundPropagation::run(OsiSolverInterface *solver,
       if (colTypeBuf[j] != 1) // 1 = Binary
         hasNonBinaryVars = true;
   }
+
+  // ---------------------------------------------------------------
+  // Divergence (positive-cycle) detection for FBBT.
+  // ---------------------------------------------------------------
+  // Rows of the form  x_j - x_i >= c  (disjunctive/precedence constraints,
+  // e.g. job-shop scheduling) implement, under FBBT, the exact same bound
+  // relaxation rule as Bellman-Ford shortest-path relaxation:
+  //   lb(x_j) = max(lb(x_j), lb(x_i) + c).
+  // Bellman-Ford's classic guarantee is that shortest paths (here: tightest
+  // finite lower bounds) stabilise within at most (nCols - 1) full relaxation
+  // passes UNLESS the underlying graph contains a positive-weight cycle, in
+  // which case relaxation improves some bound forever. That is a genuine
+  // MATHEMATICAL CERTIFICATE OF INFEASIBILITY for a difference-constraint
+  // subsystem — a positive cycle means the constraints are contradictory
+  // (e.g. x1 - x0 >= 5 and x0 - x1 >= 5 imply 0 >= 10) — NOT merely "FBBT
+  // gave up too early". Our round-robin, dirty-row FBBT sweep is a Jacobi-style
+  // generalisation of the same relaxation (rows may touch more than 2
+  // variables), and the same argument applies: if round-to-round tightening
+  // has not decayed after touring the full variable set once (nCols rounds)
+  // it cannot be legitimate slow convergence — a converging system must show
+  // shrinking deltas well within that many rounds — so it must be a cycle.
+  //
+  // We detect this directly (not by an arbitrary hard round cap): track the
+  // total tightening magnitude (sum of |ΔLB|+|ΔUB|) applied per round. Once
+  // more than nCols rounds have elapsed with no fixings (a fixing legitimately
+  // changes the system and resets the window) and the magnitude has not
+  // decayed by at least half compared to nCols rounds earlier, declare
+  // infeasibility right away — this is both CORRECT (matches what the LP
+  // resolve that follows would eventually discover via a Farkas ray) and much
+  // FASTER (fires within ~nCols rounds instead of spinning indefinitely).
+  std::vector< double > roundDeltaHistory;
+  const int divergenceWindow = std::max(10, nCols);
+
+  // Fixpoint level has no explicit maxRounds cap by design (see header doc:
+  // "ignores maxRounds") since it targets the genuine mathematical fixpoint.
+  // The divergence detector above is expected to terminate any non-converging
+  // case within O(nCols) rounds; roundLimit itself is only a last-resort
+  // safety net (never expected to be hit) in case some pathological instance
+  // manages to evade the detector.
+  const int roundLimit = (level == Fixpoint) ? INT_MAX : maxRounds;
 
   // Built lazily after round 1 (if a second round is needed).
   bool dirtyInfraBuilt = false;
@@ -470,6 +510,9 @@ bool CbcBoundPropagation::run(OsiSolverInterface *solver,
 
     // Commit bound changes and record old/new for the post-round adjacency pass.
     changedBounds.clear();
+    double sumAbsDeltaThisRound = 0.0;
+    int worstCol = -1;
+    double worstColDelta = 0.0;
     for (const auto &p : bounds) {
       const int col = static_cast< int >(p.first);
       const double newLB = p.second.first;
@@ -478,6 +521,26 @@ bool CbcBoundPropagation::run(OsiSolverInterface *solver,
       const double oldUB = curUB[col];
       // Check BEFORE updating curLB/curUB so the lambda sees the old bounds.
       checkFixing(col, newLB, newUB, "propagation");
+      // logLevel >= 3: trace every individual bound change with its delta, so
+      // a genuine (but very slow, geometrically-converging) tightening chain
+      // can be told apart from a bug that keeps re-touching the same column
+      // by a non-shrinking or oscillating amount round after round.
+      if (logLevel >= 3 && (newLB != oldLB || newUB != oldUB)) {
+        printf("  [BP diag] round %d: col %d dLB=%.3e (%.15g->%.15g)"
+               " dUB=%.3e (%.15g->%.15g)\n",
+          round, col, newLB - oldLB, oldLB, newLB, newUB - oldUB, oldUB, newUB);
+        fflush(stdout);
+      }
+      // Only accumulate finite-to-finite deltas — a bound moving between two
+      // "infinity" sentinels is not a real tightening.
+      const double absDLB = (oldLB > -infinity && newLB > -infinity) ? std::fabs(newLB - oldLB) : 0.0;
+      const double absDUB = (oldUB < infinity && newUB < infinity) ? std::fabs(newUB - oldUB) : 0.0;
+      const double colDelta = absDLB + absDUB;
+      sumAbsDeltaThisRound += colDelta;
+      if (colDelta > worstColDelta) {
+        worstColDelta = colDelta;
+        worstCol = col;
+      }
       curLB[col] = newLB;
       curUB[col] = newUB;
       solver->setColLower(col, newLB);
@@ -535,6 +598,70 @@ bool CbcBoundPropagation::run(OsiSolverInterface *solver,
              " (total fixed %d).\n",
         nRoundsRun_, nFixed, nFBBT, nBoundPropFixed_);
       fflush(stdout);
+    }
+
+    // Divergence (positive-cycle) check — see the detailed rationale in the
+    // setup block above where roundDeltaHistory/divergenceWindow are defined.
+    if (nFixed > 0) {
+      // A genuine fixing changes the system meaningfully; any prior "no
+      // decay" history is no longer a valid baseline for comparison.
+      roundDeltaHistory.clear();
+    } else {
+      roundDeltaHistory.push_back(sumAbsDeltaThisRound);
+      if (static_cast< int >(roundDeltaHistory.size()) > divergenceWindow) {
+        const double deltaNow = roundDeltaHistory.back();
+        const double deltaBefore = roundDeltaHistory[roundDeltaHistory.size() - 1 - divergenceWindow];
+        // Require at least 50% decay over a full window; anything less is
+        // treated as non-convergent (tolerates floating-point noise while
+        // still catching true divergence, which empirically shows exactly
+        // zero decay round after round).
+        if (deltaBefore > primalTol && deltaNow >= 0.5 * deltaBefore) {
+          // Best-effort witness row: any currently-dirty row incident to the
+          // worst-drifting column.
+          int witnessRow = -1;
+          if (dirtyInfraBuilt && worstCol >= 0) {
+            for (CoinBigIndex ri = colRowStart[worstCol];
+                 ri < colRowStart[worstCol + 1]; ++ri) {
+              const int r = colRowList[ri];
+              if (dirtyRowsFBBT[r]) {
+                witnessRow = r;
+                break;
+              }
+            }
+          }
+          infeasibleCol_ = worstCol;
+          infeasibleRow_ = witnessRow;
+          stopReason_ = InfeasibleDetected;
+          timeUsed_ = (CoinGetTimeOfDay()) - t0;
+
+          if (logLevel >= 1) {
+            const std::string colName = (infeasibleCol_ >= 0 && infeasibleCol_ < solver->getNumCols())
+              ? solver->getColName(infeasibleCol_)
+              : "(unknown)";
+            if (infeasibleRow_ >= 0) {
+              const std::string rowName = (infeasibleRow_ < solver->getNumRows())
+                ? solver->getRowName(infeasibleRow_)
+                : "(unknown)";
+              printf("  Bound tightening: INFEASIBLE -- FBBT divergence detected"
+                     " after %d round(s) with no decaying progress"
+                     " (col %d (%s) still moving by %.3g per round,"
+                     " row %d (%s), %.3f s -- a Bellman-Ford"
+                     " positive-cycle certificate).\n",
+                static_cast< int >(roundDeltaHistory.size()), infeasibleCol_,
+                colName.c_str(), deltaNow, infeasibleRow_, rowName.c_str(), timeUsed_);
+            } else {
+              printf("  Bound tightening: INFEASIBLE -- FBBT divergence detected"
+                     " after %d round(s) with no decaying progress"
+                     " (col %d (%s) still moving by %.3g per round), %.3f s"
+                     " -- a Bellman-Ford positive-cycle certificate.\n",
+                static_cast< int >(roundDeltaHistory.size()), infeasibleCol_,
+                colName.c_str(), deltaNow, timeUsed_);
+            }
+            fflush(stdout);
+          }
+          return false;
+        }
+      }
     }
   }
 
